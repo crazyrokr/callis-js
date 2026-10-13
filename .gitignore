@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.lcov
+coverage/
+*.lcov
+osv-snapshot/
+data/
+.DS_Store
+*.log

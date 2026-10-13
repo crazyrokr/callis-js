@@ -1,0 +1,18 @@
+// Renovate configuration for callis-js (plan section 8: dependency, Bun, and
+// Action updates). Demo fixtures are excluded: their vulnerable pins are
+// deliberate (JVM renovate.json5 parity).
+{
+  $schema: "https://docs.renovatebot.com/schema.json",
+  extends: ["config:recommended"],
+  packageRules: [
+    {
+      matchPaths: ["examples/**"],
+      enabled: false,
+    },
+    {
+      matchManagers: ["bun"],
+      // Bun bumps must re-verify every section-7 compile flag before merge.
+      labels: ["bun-bump"],
+    },
+  ],
+}
