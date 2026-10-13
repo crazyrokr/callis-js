@@ -1,0 +1,8 @@
+{
+  "name": "@callis/models",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "data/index.json",
+  "description": "Curated data for callis: library models, callback interfaces, entry-point annotations. Embedded into the compiled binary via --asset."
+}

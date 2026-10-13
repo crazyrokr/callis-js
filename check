@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Quality gate (plan section 9): typecheck, lint, tests, coverage gates.
+set -euo pipefail
+cd "$(dirname "$0")"
+bun run typecheck
+bun run lint
+bun run coverage
+bun tools/coverage-gate.ts
+echo "check: all gates green"

@@ -1,0 +1,11 @@
+# Bun workspace configuration for callis-js.
+#
+# The compiled binary disables cwd config autoloading at build time
+# (--no-compile-autoload-dotenv --no-compile-autoload-bunfig, plan section 7);
+# this file only configures the development workspace.
+
+[test]
+root = "."
+
+[install]
+peer = true

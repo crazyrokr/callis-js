@@ -1,0 +1,14 @@
+{
+  "name": "@callis/cli",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/main.ts",
+  "bin": {
+    "callis": "src/main.ts"
+  },
+  "dependencies": {
+    "@callis/core": "workspace:*",
+    "@callis/models": "workspace:*"
+  }
+}
