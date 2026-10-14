@@ -22,6 +22,7 @@
 // edges, never fewer).
 
 import type { FunctionSummary, ModuleIR } from "../frontend/index.js";
+import type { TopLevelStmt } from "../frontend/types.js";
 import { type LibraryModel, callbackArgsOf, modelForCall } from "./models.js";
 import {
   type BuildInput,
@@ -313,8 +314,51 @@ export class CallGraphBuilder {
         if (iife !== null) {
           this.addEdge(init, iife.id, "call", stmt.line);
           this.activate(iife.id);
+          continue;
         }
       }
+      // Top-level member call: `const m = require("x"); m.f()` — the module
+      // object flows from the import binding; resolve through the export
+      // table (the common CJS entry shape).
+      await this.resolveTopLevelMember(mod, init, stmt);
+    }
+  }
+
+  /**
+   * A module-scope member call. Two shapes: `m.f()` where `m` is an import
+   * binding (require module object / namespace / default), and
+   * `require("x").f()` where the module object is the direct receiver.
+   */
+  private async resolveTopLevelMember(mod: ModuleState, init: string, stmt: TopLevelStmt): Promise<void> {
+    // `require("x").f()`: no local binding — the module object is the direct
+    // receiver; resolve the specifier through the linker.
+    const reqDirect = /^require\(\s*(['"])(.+?)\1\s*\)\.([A-Za-z_$][\w$]*)/.exec(stmt.shape);
+    if (reqDirect !== null && reqDirect[2] !== undefined && reqDirect[3] !== undefined) {
+      const target = this.input.linker.resolve(mod.ir.file, reqDirect[2], "require");
+      if (target !== null) {
+        const targetMod = await this.loadModule(target);
+        if (targetMod !== null) {
+          this.addEdge(init, targetMod.initNode.id, "import", stmt.line);
+          this.activate(targetMod.initNode.id);
+          const f = await this.exportFunction(targetMod, reqDirect[3]);
+          if (f !== undefined) {
+            this.addEdge(init, f.id, "call", stmt.line);
+            this.activate(f.id);
+          }
+        }
+      }
+      return;
+    }
+    const argAt = stmt.shape.indexOf("(");
+    const callee = (argAt >= 0 ? stmt.shape.slice(0, argAt) : stmt.shape).trim();
+    if (!isMemberText(callee)) return;
+    const dot = callee.lastIndexOf(".");
+    const base = callee.slice(0, dot);
+    const member = callee.slice(dot + 1);
+    const via = await this.importTarget(mod.ir.file, base, member, true);
+    if (via !== null) {
+      this.addEdge(init, via, "call", stmt.line);
+      this.activate(via);
     }
   }
 

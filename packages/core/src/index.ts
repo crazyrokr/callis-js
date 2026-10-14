@@ -17,3 +17,6 @@ export * from "./osv/index.js";
 export * from "./project/index.js";
 export * from "./frontend/index.js";
 export * from "./callgraph/index.js";
+export * from "./verdict/index.js";
+export * from "./report/index.js";
+export * from "./engine/index.js";
