@@ -11,9 +11,11 @@ import { SCHEMA_VERSION } from "../index.js";
 import type {
   Assignment,
   CallSite,
+  ClassDecl,
   DynamicMarker,
   ExportDecl,
   FunctionSummary,
+  ImportBinding,
   ImportDecl,
   ModuleFormat,
   ModuleIR,
@@ -74,6 +76,7 @@ interface State {
   exports: ExportDecl[];
   functions: FunctionSummary[];
   topLevel: TopLevelStmt[];
+  moduleAssignments: Assignment[];
   dynamic: DynamicMarker[];
   interop: Set<string>;
   unresolvedImports: string[];
@@ -83,6 +86,7 @@ interface State {
   objectStack: string[];
   /** Class base names (innermost last). */
   classStack: string[];
+  classBases: ClassDecl[];
 }
 
 function lineOf(s: State, node: ts.Node): number {
@@ -267,6 +271,17 @@ function dynamicForCall(s: State, node: ts.CallExpression): void {
       if (arg === undefined || !isStringLiteral(arg)) {
         recordDynamic(s, "require-expr", node);
       }
+      return;
+    }
+  }
+  // `new Function("...")()` — the callee itself is dynamic code. Inside a
+  // function body the child walk records the marker on the NewExpression
+  // itself (visit), so record only at module scope (no child walk there).
+  const newExpr = unwrapOptional(node.expression);
+  if (s.fnStack.length === 0 && ts.isNewExpression(newExpr)) {
+    const ctor = unwrapOptional(newExpr.expression);
+    if (ts.isIdentifier(ctor) && ctor.text === "Function") {
+      recordDynamic(s, "new-function", node);
       return;
     }
   }
@@ -507,7 +522,10 @@ function recordExportsAssignment(s: State, node: ts.BinaryExpression, line: numb
     if (ts.isIdentifier(base) && base.text === "exports" && ts.isIdentifier(lhs.name)) {
       const name = lhs.name.text;
       if (isFunctionLike(rhs)) {
-        s.exports.push({ name, kind: "named", line });
+        // `exports.handler = function...` — the export's local IS the
+        // function (named `name`): callback-interface detection and
+        // export resolution need the local to exist.
+        s.exports.push({ name, local: name, kind: "named", line });
         const summary = addFunction(s, rhs as ts.FunctionLikeDeclaration, name, { top: true, exported: true });
         if (summary !== null) {
           s.fnStack.push({ summary, node: rhs as ts.FunctionLikeDeclaration });
@@ -527,7 +545,16 @@ function recordExportsAssignment(s: State, node: ts.BinaryExpression, line: numb
         for (const prop of rhs.properties) {
           recordObjectMember(s, prop, line);
           const keyText = objectMemberKey(s, prop);
-          if (keyText.length > 0) s.exports.push({ name: keyText, kind: "named", line });
+          if (keyText.length > 0) {
+            // A member that IS (or refers to) a module function exports it:
+            // `module.exports = { handler }` / `{ handler: fn }`.
+            const fn = s.functions.find((f) => f.name === keyText && f.top);
+            s.exports.push(
+              fn !== undefined
+                ? { name: keyText, local: keyText, kind: "named", line }
+                : { name: keyText, kind: "named", line },
+            );
+          }
         }
         s.objectStack.pop();
         s.topLevel.push({ kind: "assignment", shape: textOf(s, node), line });
@@ -602,16 +629,21 @@ function isInteropHelperCall(s: State, node: ts.CallExpression): boolean {
 function recordEsmImport(s: State, stmt: ts.ImportDeclaration, line: number): void {
   const clause = stmt.moduleSpecifier;
   const literal = isStringLiteral(clause) ? clause.text : null;
-  const bindings: string[] = [];
+  const bindings: ImportBinding[] = [];
   const bind = stmt.importClause;
   if (bind !== undefined) {
-    if (bind.name !== undefined) bindings.push(bind.name.text);
+    if (bind.name !== undefined) bindings.push({ local: bind.name.text, exported: "default" });
     if (bind.namedBindings !== null && bind.namedBindings !== undefined) {
       if (ts.isNamespaceImport(bind.namedBindings)) {
-        // `import * as ns from "dep"`: the namespace is the binding
-        bindings.push(bind.namedBindings.name.text);
+        // `import * as ns from "dep"`: the namespace object is the binding
+        bindings.push({ local: bind.namedBindings.name.text, exported: "*" });
       } else if (ts.isNamedImports(bind.namedBindings)) {
-        for (const n of bind.namedBindings.elements) bindings.push(n.name.text);
+        for (const n of bind.namedBindings.elements) {
+          bindings.push({
+            local: n.name.text,
+            exported: n.propertyName !== undefined ? n.propertyName.text : n.name.text,
+          });
+        }
       }
     }
   }
@@ -642,6 +674,11 @@ function recordExport(s: State, stmt: ts.ExportDeclaration, line: number): void 
       const rec: ExportDecl = { name: "*", kind: "star", line };
       if (from !== undefined) rec.from = from;
       s.exports.push(rec);
+    }
+    // A re-export LOADS the source module at import time: link it (no local
+    // bindings — the export table of the target module is the interface).
+    if (from !== undefined && !s.imports.some((i) => i.kind === "esm" && i.module === from)) {
+      s.imports.push({ module: from, kind: "esm", bindings: [], dynamic: false, line });
     }
     return;
   }
@@ -684,7 +721,7 @@ function recordTopLevelVariables(
         s.imports.push({
           module: literal ?? (arg !== undefined ? textOf(s, arg) : ""),
           kind: literal === null ? "require-dynamic" : "require",
-          bindings: name.length > 0 ? [name] : [],
+          bindings: requireBindingsOf(decl.name, name),
           dynamic: literal === null,
           line,
         });
@@ -697,7 +734,7 @@ function recordTopLevelVariables(
           s.imports.push({
             module: arg.text,
             kind: "import-dynamic",
-            bindings: name.length > 0 ? [name] : [],
+            bindings: name.length > 0 ? [{ local: name, exported: "*" }] : [],
             dynamic: true,
             line,
           });
@@ -708,6 +745,9 @@ function recordTopLevelVariables(
         if (arg !== undefined) s.unresolvedImports.push(textOf(s, arg));
         return;
       }
+      // Module-scope creator assignment (`const app = express()`) — recorded
+      // for framework entry detection (M4); require/import inits returned above.
+      if (name.length > 0) s.moduleAssignments.push({ target: name, value: textOf(s, init), kind: "identifier", line });
       recordDynamicForTopLevel(s, init);
       if (isInteropHelperCall(s, init)) {
         s.topLevel.push({ kind: "call", shape: textOf(s, init), line });
@@ -747,10 +787,37 @@ function recordTopLevelVariables(
       pushExport();
       return;
     }
+    if (ts.isNewExpression(init)) {
+      // `const app = new Koa()` — framework creator (M4 entry detection)
+      if (name.length > 0) s.moduleAssignments.push({ target: name, value: textOf(s, init), kind: "identifier", line });
+      s.topLevel.push({ kind: "other", shape: textOf(s, decl).slice(0, 60), line });
+      pushExport();
+      return;
+    }
 
     s.topLevel.push({ kind: "other", shape: textOf(s, decl).slice(0, 60), line });
     pushExport();
   }
+}
+
+/**
+ * Bindings of `const X = require(...)`: a plain identifier, or the names of an
+ * object pattern (`const {a, b as c} = require(...)`). Array patterns are
+ * positional (no names) and stay empty.
+ */
+function requireBindingsOf(pattern: ts.DeclarationName, plainName: string): ImportBinding[] {
+  if (plainName.length > 0) return [{ local: plainName, exported: plainName }];
+  if (ts.isObjectBindingPattern(pattern)) {
+    const out: ImportBinding[] = [];
+    for (const el of pattern.elements) {
+      const local = ts.isIdentifier(el.name) ? el.name.text : "";
+      if (local.length === 0) continue;
+      const exported = el.propertyName !== undefined ? (el.propertyName.getText() ?? local) : local;
+      out.push({ local, exported });
+    }
+    return out;
+  }
+  return [];
 }
 
 function objectMemberKey(s: State, prop: ts.ObjectLiteralElementLike): string {
@@ -808,6 +875,17 @@ function recordObjectMember(s: State, prop: ts.ObjectLiteralElementLike, line: n
 
 function walkClass(s: State, cls: ts.ClassLikeDeclaration, baseName: string, line: number): void {
   s.classStack.push(baseName);
+  if (baseName.length > 0) {
+    // TS 5.6: `heritageClauses` (plural, an array) replaced the singular
+    // `heritageClause`; take the first `extends` target (`class B extends A`).
+    const heritage = (cls.heritageClauses ?? [])
+      .filter((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
+      .map((h) => h.types[0])
+      .find((t) => t !== undefined);
+    const rec: ClassDecl = { name: baseName, line };
+    if (heritage !== undefined) rec.base = textOf(s, heritage);
+    s.classBases.push(rec);
+  }
   for (const member of cls.members) {
     if (ts.isConstructorDeclaration(member)) {
       const name = baseName.length > 0 ? `${baseName}.#constructor` : "#constructor";
@@ -947,8 +1025,24 @@ function walkBody(s: State, fn: ts.FunctionLikeDeclaration): void {
       if (ts.isCallExpression(init)) {
         dynamicForCall(s, init);
         recordCall(s, init, false);
+        // `const x = f()`: the call result flows into x (0-CFA return flow,
+        // plan 5.5 item 3) — record it as an assignment too.
+        recordAssignment(s, node.name as ts.Expression, textOf(s, init), lineOf(s, node));
         return;
       }
+      if (ts.isNewExpression(init)) {
+        // `const o = new C()`: receiver flow to the instantiated class (RTA,
+        // plan 5.5 item 2) — record it as an assignment too. The initializer
+        // IS a call site (shape "new"): record it directly — walkNode only
+        // visits the initializer's children, never the node itself.
+        recordAssignment(s, node.name as ts.Expression, textOf(s, init), lineOf(s, node));
+        recordCall(s, init, false);
+        walkNode(s, init, visit);
+        return;
+      }
+      // Any other initializer (`const alias = handler;`, `const a = b.c;`,
+      // literals) — identifier/member flow (0-CFA, plan 5.5 item 3).
+      recordAssignment(s, node.name as ts.Expression, textOf(s, init), lineOf(s, node));
       walkNode(s, init, visit);
       return;
     }
@@ -1064,12 +1158,14 @@ export function parseModule(file: string, text: string, options: ParseOptions = 
     exports: [],
     functions: [],
     topLevel: [],
+    moduleAssignments: [],
     dynamic: [],
     interop: new Set<string>(),
     unresolvedImports: [],
     fnStack: [],
     objectStack: [],
     classStack: [],
+    classBases: [],
   };
 
   for (const stmt of sf.statements) {
@@ -1083,7 +1179,9 @@ export function parseModule(file: string, text: string, options: ParseOptions = 
     imports: s.imports,
     exports: s.exports,
     topLevel: s.topLevel,
+    moduleAssignments: s.moduleAssignments,
     functions: s.functions,
+    classBases: s.classBases,
     dynamic: s.dynamic,
     interop: [...s.interop].sort(),
     unresolvedImports: s.unresolvedImports,

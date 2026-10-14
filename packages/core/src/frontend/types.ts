@@ -8,12 +8,19 @@
 /** How the file is interpreted (the type field, ADR 0005). */
 export type ModuleFormat = "cjs" | "esm" | "unknown";
 
+/** One local binding of an import: `import {b as c}` → {local: c, exported: b}. */
+export interface ImportBinding {
+  local: string;
+  /** The exported name ("default" for default imports, "*" for a namespace). */
+  exported: string;
+}
+
 export interface ImportDecl {
   /** Literal specifier, or the (capped) expression text when non-literal. */
   module: string;
   kind: "esm" | "require" | "import-dynamic" | "require-dynamic";
-  /** Local names bound (default/named for esm; the binding for require). */
-  bindings: string[];
+  /** Local binding → exported name (the call graph resolves through these). */
+  bindings: ImportBinding[];
   /** True for import(expr) / require(expr) — dynamic-risk markers (plan 5.5). */
   dynamic: boolean;
   line: number;
@@ -99,6 +106,14 @@ export interface TopLevelStmt {
   functionName?: string;
 }
 
+/** A class declaration and its `extends` target (super edges, plan 5.5). */
+export interface ClassDecl {
+  name: string;
+  /** The `extends` target name (undefined for classes without a base). */
+  base?: string;
+  line: number;
+}
+
 /** Unresolvable constructs, recorded never dropped (plan 5.5, ADR 0011). */
 export interface DynamicMarker {
   kind: "eval" | "new-function" | "require-expr" | "import-expr" | "computed-call";
@@ -118,7 +133,14 @@ export interface ModuleIR {
   exports: ExportDecl[];
   /** Top-level statements, in source order (the module-init body). */
   topLevel: TopLevelStmt[];
+  /**
+   * Module-scope assignments to call/new values (`const app = express()`),
+   * in source order — framework creator detection (M4 entry points).
+   */
+  moduleAssignments: Assignment[];
   functions: FunctionSummary[];
+  /** Class declarations and their `extends` target (super edges, plan 5.5). */
+  classBases: ClassDecl[];
   dynamic: DynamicMarker[];
   /** Recognized interop forms: UMD wrapper, IIFE, __exportStar, __importDefault... */
   interop: string[];

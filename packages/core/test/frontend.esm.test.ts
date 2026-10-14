@@ -14,8 +14,18 @@ describe("ESM imports (plan 5.4)", () => {
       export { a };
     `,
     );
-    expect(ir.imports[0]).toEqual({ module: "dep", kind: "esm", bindings: ["def", "a", "c"], dynamic: false, line: 2 });
-    expect(ir.imports[1]?.bindings).toEqual(["ns"]);
+    expect(ir.imports[0]).toEqual({
+      module: "dep",
+      kind: "esm",
+      bindings: [
+        { local: "def", exported: "default" },
+        { local: "a", exported: "a" },
+        { local: "c", exported: "b" },
+      ],
+      dynamic: false,
+      line: 2,
+    });
+    expect(ir.imports[1]?.bindings).toEqual([{ local: "ns", exported: "*" }]);
   });
 
   test("given a dynamic import() of a literal, when parsed, then it is a dynamic import, not unresolved", () => {
@@ -263,8 +273,17 @@ describe("dynamic-risk markers (plan 5.5, ADR 0011)", () => {
 describe("CJS forms (plan 5.4)", () => {
   test("given require with destructuring, when parsed, then the bindings are recorded", () => {
     const ir = parseModule("m.js", `const { a, b } = require("dep");\nconst c = require("dep2");`);
-    expect(ir.imports[0]).toEqual({ module: "dep", kind: "require", bindings: [], dynamic: false, line: 1 });
-    expect(ir.imports[1]?.bindings).toEqual(["c"]);
+    expect(ir.imports[0]).toEqual({
+      module: "dep",
+      kind: "require",
+      bindings: [
+        { local: "a", exported: "a" },
+        { local: "b", exported: "b" },
+      ],
+      dynamic: false,
+      line: 1,
+    });
+    expect(ir.imports[1]?.bindings).toEqual([{ local: "c", exported: "c" }]);
   });
 
   test("given module.exports = { fn }, when parsed, then module-exports + named entries + member summaries", () => {
@@ -382,6 +401,22 @@ describe("TS/JSX forms (plan 5.4)", () => {
   test("given a .cjs file, when parsed, then the format is cjs", () => {
     const ir = parseModule("m.cjs", "module.exports = 1;");
     expect(ir.moduleFormat).toBe("cjs");
+  });
+
+  test("given class declarations with/without extends, when parsed, then classBases records the base (super edges, plan 5.5)", () => {
+    const ir = parseModule(
+      "m.js",
+      `
+      class A { m() { return 1; } }
+      class B extends A { m() { return super.m() + 1; } }
+      class C {}
+    `,
+    );
+    expect(ir.classBases).toEqual([
+      { name: "A", line: 2 },
+      { name: "B", base: "A", line: 3 },
+      { name: "C", line: 4 },
+    ]);
   });
 });
 
