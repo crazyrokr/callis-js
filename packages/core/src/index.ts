@@ -5,7 +5,9 @@
 // M4 call graph, M5 verdict/report/engine/policy).
 
 export const TOOL_VERSION = "0.1.0";
-export const IR_VERSION = "1";
+// Bumped to 2 in M4: ModuleIR gained classBases (super edges, plan 5.5) —
+// older cache entries lack the field and must not be reused.
+export const IR_VERSION = "2";
 export const SCHEMA_VERSION = "1";
 
 export * from "./util/errors.js";
@@ -14,3 +16,4 @@ export * from "./sbom/index.js";
 export * from "./osv/index.js";
 export * from "./project/index.js";
 export * from "./frontend/index.js";
+export * from "./callgraph/index.js";

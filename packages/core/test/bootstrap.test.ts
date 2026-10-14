@@ -24,7 +24,9 @@ function runCli(args: string[]): { code: number; out: string; err: string } {
 describe("bootstrap", () => {
   test("given the core version pins, when read, then all three constants are set", () => {
     expect(TOOL_VERSION).toBe("0.1.0");
-    expect(IR_VERSION).toBe("1");
+    // IR_VERSION is "2" since M4 (ModuleIR gained classBases; older cache entries
+    // are never reused — the key embeds the version).
+    expect(IR_VERSION).toBe("2");
     expect(SCHEMA_VERSION).toBe("1");
   });
 
