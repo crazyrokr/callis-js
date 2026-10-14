@@ -640,3 +640,41 @@ describe("demand-driven loading and determinism", () => {
     expect(a).toBe(b);
   });
 });
+
+describe("top-level member calls (module-scope CJS pattern, M5 regression)", () => {
+  test("given a module-scope require + member call (const m = require(x); m.f()), when built, then the entry init calls the exported function", async () => {
+    const files = {
+      [A]: `const m = require("./b.mjs");
+           m.f();`,
+      [B]: "module.exports = { f: function f() { } };",
+    };
+    const links = { [`${A}\u0000./b.mjs`]: B };
+    const g = await build(files, ep(A, "<module-init>"), undefined, [], links);
+    expect(hasEdge(g, init(A), init(B), "import")).toBe(true);
+    expect(hasEdge(g, init(A), id(B, "f"), "call")).toBe(true);
+  });
+
+  test("given require(x).f() with no local binding, when built, then the init imports the module and calls the export", async () => {
+    const files = {
+      [A]: `require("./b.mjs").f();`,
+      [B]: "module.exports = { f: function f() { } };",
+    };
+    const links = { [`${A}\u0000./b.mjs`]: B };
+    const g = await build(files, ep(A, "<module-init>"), undefined, [], links);
+    expect(hasEdge(g, init(A), init(B), "import")).toBe(true);
+    expect(hasEdge(g, init(A), id(B, "f"), "call")).toBe(true);
+  });
+
+  test("given a module-scope member call on an import that exports NO such function, when built, then no call edge (no false positive)", async () => {
+    const files = {
+      [A]: `const m = require("./b.mjs");
+           m.missing();`,
+      [B]: "module.exports = { f: function f() { } };",
+    };
+    const links = { [`${A}\u0000./b.mjs`]: B };
+    const g = await build(files, ep(A, "<module-init>"), undefined, [], links);
+    expect(hasEdge(g, init(A), init(B), "import")).toBe(true);
+    expect(hasEdge(g, init(A), id(B, "f"), "call")).toBe(false);
+    expect(g.edges.some((e) => e.from === init(A) && e.kind === "call")).toBe(false);
+  });
+});
