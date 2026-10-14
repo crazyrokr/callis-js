@@ -67,7 +67,7 @@ for (const raw of readFileSync(lcovPath, "utf8").split("\n")) {
 
 let failed = false;
 for (const gate of GATES) {
-  const dirExists = existsSync(join("packages", ...gate.dir.split("/")));
+  const dirExists = existsSync(gate.dir);
   const files = records.filter((r) => r.file.startsWith(`${gate.dir}/`));
   if (!dirExists) {
     console.log(`coverage-gate: ${gate.dir} absent in this checkout; gate deferred`);
