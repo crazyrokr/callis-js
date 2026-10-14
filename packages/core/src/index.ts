@@ -12,3 +12,4 @@ export * from "./util/errors.js";
 export * from "./util/hash.js";
 export * from "./sbom/index.js";
 export * from "./osv/index.js";
+export * from "./project/index.js";
