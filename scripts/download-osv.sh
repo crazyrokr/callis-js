@@ -3,12 +3,12 @@
 #
 # Usage: scripts/download-osv.sh <target-dir>
 #
-# The pin is sha256 over the sorted "name:filesha256" lines, sorted in byte
-# order (LC_ALL=C). The TypeScript loader computes the same pin (UTF-8 byte
-# comparison) so script and analyzer always agree.
+# The pin algorithm lives in scripts/compute-pin.sh (single source of
+# truth, parity-tested against the TypeScript loader).
 set -euo pipefail
 
 TARGET="${1:?usage: download-osv.sh <target-dir>}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 URL="https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -26,18 +26,7 @@ done < <(unzip -Z1 "${WORK}/all.zip")
 unzip -q -o "${WORK}/all.zip" -d "$TARGET"
 
 echo "computing pin"
-PINDIR="$(mktemp -d)"
-trap 'rm -rf "$WORK" "$PINDIR"' EXIT
-(
-  cd "$TARGET"
-  # One "name:filesha256" line per record file, byte-order sorted.
-  find . -type f -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
-    rel="${f#./}"
-    sum="$(sha256sum "$f" | cut -d' ' -f1)"
-    printf '%s:%s\n' "$rel" "$sum"
-  done
-) | LC_ALL=C sort > "$PINDIR/lines"
-PIN="$(sha256sum "$PINDIR/lines" | cut -d' ' -f1)"
+PIN="$(bun "$SCRIPT_DIR/compute-pin.sh" "$TARGET" 2>/dev/null || bash "$SCRIPT_DIR/compute-pin.sh" "$TARGET")"
 printf '%s\n' "$PIN" > "${TARGET}.pin"
 echo "pin: ${PIN}"
 echo "wrote ${TARGET}.pin"

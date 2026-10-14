@@ -12,13 +12,14 @@
     "coverage": "bun test --coverage --coverage-reporter=lcov",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
-    "check": "bun run typecheck && bun run lint && bun run test",
+    "check": "bun run typecheck && bun run lint && bun run coverage && bun tools/coverage-gate.ts",
     "build": "bun scripts/build.ts",
     "e2e": "bun scripts/e2e.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/node": "22.10.0",
+    "@types/semver": "7.5.8",
     "bun-types": "1.4.2",
     "semver": "7.7.0",
     "typescript": "5.6.3"
