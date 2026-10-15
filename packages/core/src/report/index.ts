@@ -12,4 +12,4 @@ export {
 } from "./status.js";
 export { jsonDocument, writeJsonReport } from "./json.js";
 export { junitDocument, traceMessage, writeJUnitReport } from "./junit.js";
-export { sarifDocument, writeSarifReport } from "./sarif.js";
+export { sarifDocument, writeSarifReport, type NodeLocation } from "./sarif.js";

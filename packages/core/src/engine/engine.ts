@@ -36,6 +36,7 @@ import {
   type Completeness,
   type ComponentState,
   type GuardStates,
+  type NodeLocation,
   type ReportMeta,
   type UnresolvedImport,
   assembleResult,
@@ -137,7 +138,12 @@ async function deleteStaleReports(output: string, formats: string[]): Promise<vo
   }
 }
 
-async function writeReports(result: AnalysisResult, opts: EngineOptions, console: Console): Promise<void> {
+async function writeReports(
+  result: AnalysisResult,
+  opts: EngineOptions,
+  console: Console,
+  nodeLocations?: Record<string, NodeLocation>,
+): Promise<void> {
   // A missing output parent is created (a fresh CI workspace); a destination
   // that CANNOT be created or written is the exit-3 condition (plan section 6).
   const dir = dirname(opts.output);
@@ -146,10 +152,20 @@ async function writeReports(result: AnalysisResult, opts: EngineOptions, console
   const files = reportFiles(opts.output, opts.formats);
   if (files.json !== undefined) await writeJsonReport(result, files.json);
   if (files.junitxml !== undefined) await writeJUnitReport(result, files.junitxml);
-  if (files.sarif !== undefined) await writeSarifReport(result, files.sarif);
+  if (files.sarif !== undefined) await writeSarifReport(result, files.sarif, nodeLocations);
   if (opts.verbose) {
     for (const f of Object.values(files)) console.out(`report written: ${f}`);
   }
+}
+
+/** Node ids to source locations (M7b: the SARIF codeFlow physical anchors).
+ *  Undefined when no graph was built (sbom-only / guard failure): the hops
+ *  then stay logical node ids. */
+function nodeLocationsOf(graph: CallGraph | null): Record<string, NodeLocation> | undefined {
+  if (graph === null) return undefined;
+  const map: Record<string, NodeLocation> = {};
+  for (const n of graph.nodes) map[n.id] = { file: n.file, line: n.line };
+  return map;
 }
 
 /** The console summary (analysisStatus next to the verdict summary, v3.3). */
@@ -772,7 +788,7 @@ export async function runAnalysis(optsIn: EngineOptions, console: Console = DEFA
 
   // 11. Reports (stale cleanup first) + console summary.
   try {
-    await writeReports(result, opts, console);
+    await writeReports(result, opts, console, nodeLocationsOf(graph));
   } catch (e) {
     console.err(`error: cannot write reports: ${(e as Error).message}`);
     return 3;

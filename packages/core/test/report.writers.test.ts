@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { reportFiles } from "../src/engine/engine.js";
 import { jsonDocument, writeJsonReport } from "../src/report/json.js";
 import { junitDocument, traceMessage, writeJUnitReport } from "../src/report/junit.js";
-import { sarifDocument, writeSarifReport } from "../src/report/sarif.js";
+import { type NodeLocation, sarifDocument, writeSarifReport } from "../src/report/sarif.js";
 import { completeness, exposure, finding, guards, meta, result } from "./verdict.fixtures.js";
 
 const reachable = () =>
@@ -20,6 +20,13 @@ const reachable = () =>
     confidence: "PRECISE",
     path: ["/proj/src/main.js#main", "/proj/src/a.js#mid", "/inst/node_modules/lodash/index.js#vuln"],
   });
+
+/** Node locations covering `reachable()`'s path (M7b codeFlows). */
+const nodeLocs = (): Record<string, NodeLocation> => ({
+  "/proj/src/main.js#main": { file: "/proj/src/main.js", line: 1 },
+  "/proj/src/a.js#mid": { file: "/proj/src/a.js", line: 7 },
+  "/inst/node_modules/lodash/index.js#vuln": { file: "/inst/node_modules/lodash/index.js", line: 42 },
+});
 
 describe("jsonDocument", () => {
   test("given a finished result, when written, then the document is parseable, ends with a newline, and is byte-stable", () => {
@@ -137,13 +144,15 @@ describe("sarifDocument", () => {
     expect(parsed.runs[0].results).toHaveLength(2);
   });
 
-  test("given a REACHABLE finding, when written, then the physical location is the SBOM file and each trace hop a logical location", () => {
+  test("given a REACHABLE finding, when written without node locations, then the anchor is the SBOM file and each trace hop a logical location (stable node id)", () => {
     const parsed = JSON.parse(sarifDocument(result({ findings: [reachable()] })));
     const r = parsed.runs[0].results[0];
     expect(r.locations[0].physicalLocation.artifactLocation.uri).toBe("/proj/sbom.json");
-    expect(r.locations).toHaveLength(4); // physical + 3 hops
-    expect(r.locations[2].logicalLocations[0].name).toBe("/proj/src/a.js#mid");
-    expect(r.locations[2].logicalLocations[0].kind).toBe("function");
+    expect(r.locations).toHaveLength(1); // the SBOM anchor only (M7b: hops moved to codeFlows)
+    const hops = r.codeFlows[0].threadFlows[0].locations;
+    expect(hops).toHaveLength(3);
+    expect(hops[1].logicalLocations[0].name).toBe("/proj/src/a.js#mid");
+    expect(hops[1].logicalLocations[0].kind).toBe("function");
     expect(r.properties.confidence).toBe("PRECISE");
     expect(r.properties.verdict).toBe("REACHABLE");
   });
@@ -156,7 +165,69 @@ describe("sarifDocument", () => {
       path: ["a#main", "b#<module-init>"],
     });
     const parsed = JSON.parse(sarifDocument(result({ findings: [f] })));
-    expect(parsed.runs[0].results[0].locations[2].logicalLocations[0].kind).toBe("module");
+    const hops = parsed.runs[0].results[0].codeFlows[0].threadFlows[0].locations;
+    expect(hops[1].logicalLocations[0].kind).toBe("module");
+  });
+
+  test("given a REACHABLE finding and node locations, when written, then codeFlows carries a physical location (file + line) per hop", () => {
+    const parsed = JSON.parse(sarifDocument(result({ findings: [reachable()] }), nodeLocs()));
+    const r = parsed.runs[0].results[0];
+    expect(r.codeFlows).toHaveLength(1);
+    const cf = r.codeFlows[0];
+    expect(cf.id).toBe(1);
+    expect(cf.message.text).toBe(traceMessage(reachable()));
+    const hops = cf.threadFlows[0].locations;
+    expect(hops).toHaveLength(3);
+    expect(hops[0].physicalLocation.artifactLocation.uri).toBe("/proj/src/main.js");
+    expect(hops[0].physicalLocation.region.startLine).toBe(1);
+    expect(hops[1].physicalLocation.artifactLocation.uri).toBe("/proj/src/a.js");
+    expect(hops[1].physicalLocation.region.startLine).toBe(7);
+    expect(hops[2].physicalLocation.artifactLocation.uri).toBe("/inst/node_modules/lodash/index.js");
+    expect(hops[2].physicalLocation.region.startLine).toBe(42);
+    // The result-level anchor stays the SBOM file only.
+    expect(r.locations).toHaveLength(1);
+  });
+
+  test("given a path node absent from the location map, when written, then that hop falls back to a logical location with the stable node id", () => {
+    const f = finding({
+      id: "CVE-PART",
+      verdict: "REACHABLE",
+      confidence: "PRECISE",
+      path: ["/proj/src/main.js#main", "/proj/src/a.js#mid", "b#<module-init>"],
+    });
+    const known: Record<string, NodeLocation> = {
+      "/proj/src/main.js#main": { file: "/proj/src/main.js", line: 1 },
+    };
+    const parsed = JSON.parse(sarifDocument(result({ findings: [f] }), known));
+    const hops = parsed.runs[0].results[0].codeFlows[0].threadFlows[0].locations;
+    expect(hops[0].physicalLocation.artifactLocation.uri).toBe("/proj/src/main.js");
+    expect(hops[1].logicalLocations[0].name).toBe("/proj/src/a.js#mid");
+    expect(hops[1].logicalLocations[0].kind).toBe("function");
+    expect(hops[2].logicalLocations[0].name).toBe("b#<module-init>");
+    expect(hops[2].logicalLocations[0].kind).toBe("module");
+  });
+
+  test("given a finding without a path, when written with node locations, then no codeFlows property", () => {
+    const parsed = JSON.parse(sarifDocument(result({ findings: [finding()] }), nodeLocs()));
+    const r = parsed.runs[0].results[0];
+    expect(r.codeFlows).toBeUndefined();
+    expect(r.locations).toHaveLength(1);
+  });
+
+  test("given the same finding and locations twice, when written, then the codeFlows document is byte-identical", () => {
+    const r = result({ findings: [reachable()] });
+    expect(sarifDocument(r, nodeLocs())).toBe(sarifDocument(r, nodeLocs()));
+  });
+
+  test("given a REACHABLE finding and node locations, when written via writeSarifReport, then the file carries the codeFlows", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "callis-sarif-cf-"));
+    const file = join(dir, "callis-report.sarif");
+    await writeSarifReport(result({ findings: [reachable()] }), file, nodeLocs());
+    const parsed = JSON.parse(await readFile(file, "utf8"));
+    const hops = parsed.runs[0].results[0].codeFlows[0].threadFlows[0].locations;
+    expect(hops[0].physicalLocation.artifactLocation.uri).toBe("/proj/src/main.js");
+    expect(hops[0].physicalLocation.region.startLine).toBe(1);
+    await rm(dir, { recursive: true, force: true });
   });
 
   test("given severities across the scale, when written, then the level mapping holds (CRITICAL/HIGH error, MEDIUM warning, LOW/other note)", () => {
