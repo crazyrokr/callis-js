@@ -89,6 +89,21 @@ exactly this, then run callis against your SBOM + snapshot and cross-check
 your repo-pinned `expected-reachable.txt` — a living integration test of
 your own dependency state. `templates/callis-pin.json` holds the pin.
 
+## GitHub Action
+
+`action/` runs the pinned release binary (download + repo-pinned digest
+verification + optional cosign identity), runs the analysis, fails on
+REACHABLE findings or a stale `expected-reachable` pin, and exposes
+`exit-code` / `report-json` outputs — see `action/README.md`.
+
+## Turborepo / Nx
+
+`docs/build-tools.md` ships task recipes: the task declares the
+input-key components (application sources, lockfile, SBOM, OSV pin,
+mappings, flags — plan §6 `--print-cache-key`) as inputs and the report
+trio as outputs, so the analysis re-runs only when its content actually
+changes.
+
 ## Docker
 
 ```sh
