@@ -9,7 +9,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { UsageError } from "../util/errors.js";
 import { computePin } from "./checksum.js";
-import { type OsvIndex, filesForPackages, loadIndex } from "./index-store.js";
+import { type OsvIndex, filesForPackages, listRecordFiles, loadIndex } from "./index-store.js";
 import { type OsRecord, type ReadRecordFn, defaultReadRecord, readRecordFile } from "./record.js";
 
 export interface OsvSnapshot {
@@ -31,10 +31,13 @@ export async function loadSnapshot(
   expectedPin?: string,
   read: ReadRecordFn = defaultReadRecord,
 ): Promise<OsvSnapshot> {
+  // The directory must exist and be readable (exit 2). A directory with
+  // record FILES but zero valid records is the exit-3 condition — anyFile
+  // counts recursive .json files (a .gitkeep or other file is not a record).
   let anyFile = false;
   try {
-    const entries = await readdir(osvDir, { withFileTypes: true });
-    anyFile = entries.length > 0;
+    await readdir(osvDir, { withFileTypes: true });
+    anyFile = (await listRecordFiles(osvDir)).length > 0;
   } catch (e) {
     throw new UsageError(`OSV directory not readable: ${osvDir}: ${(e as Error).message}`);
   }

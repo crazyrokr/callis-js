@@ -1,0 +1,11 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    { "type": "library", "name": "lodash", "version": "4.17.20", "purl": "pkg:npm/lodash@4.17.20" }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/lodash@4.17.20", "dependsOn": [] },
+    { "ref": "pkg:npm/mapped-negative-demo@1.0.0", "dependsOn": ["pkg:npm/lodash@4.17.20"] }
+  ]
+}

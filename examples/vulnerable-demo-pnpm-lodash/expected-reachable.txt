@@ -1,0 +1,2 @@
+# pnpm virtual-store layout: same positive verdict through the .pnpm store.
+REACHABLE CVE-2020-8203

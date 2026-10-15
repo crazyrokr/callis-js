@@ -1,0 +1,11 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    { "type": "library", "name": "impfx", "version": "1.0.0", "purl": "pkg:npm/impfx@1.0.0" }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/impfx@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/import-time-demo@1.0.0", "dependsOn": ["pkg:npm/impfx@1.0.0"] }
+  ]
+}

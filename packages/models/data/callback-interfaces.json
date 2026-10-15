@@ -1,0 +1,4 @@
+{
+  "version": "1",
+  "interfaces": ["module#handler", "module#process", "module#consume", "module#onMessage", "module#eachMessage"]
+}

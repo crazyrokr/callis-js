@@ -5,13 +5,26 @@
 // Usage: bun scripts/check-expected.ts <report.json> <expected-reachable.txt> <demo-name>
 //
 // expected-reachable.txt format:
-//   REACHABLE  <canonical-id>     — finding must have verdict REACHABLE
-//   UNREACHABLE <canonical-id>    — finding must exist with verdict UNREACHABLE
-//   ABSENT     <canonical-id>     — no finding for this id may exist
+//   <VERDICT> <canonical-id>      — a finding for this id must exist with
+//                                   exactly this verdict. VERDICT is any
+//                                   value of the Verdict union (REACHABLE,
+//                                   UNREACHABLE, APPLICABLE, DEV_ONLY,
+//                                   NO_SOURCE, NATIVE_OPAQUE,
+//                                   MALICIOUS_PACKAGE)
+//   ABSENT    <canonical-id>      — no finding for this id may exist
 // Lines starting with # are comments. Every finding in the report must be
 // accounted for by some expected line (a surprise verdict fails the demo).
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+const VERDICTS = [
+  "REACHABLE",
+  "UNREACHABLE",
+  "APPLICABLE",
+  "DEV_ONLY",
+  "NO_SOURCE",
+  "NATIVE_OPAQUE",
+  "MALICIOUS_PACKAGE",
+] as const;
 
 interface Finding {
   id: string;
@@ -31,34 +44,32 @@ const expected = readFileSync(expectedPath, "utf8")
   .filter((l) => l.length > 0 && !l.startsWith("#"));
 
 interface Expectation {
-  op: "REACHABLE" | "UNREACHABLE" | "ABSENT";
+  /** A Verdict value, or ABSENT. */
+  op: string;
   id: string;
 }
 
 const expectations: Expectation[] = [];
 for (const line of expected) {
   const [op, id] = line.split(/\s+/);
-  if ((op !== "REACHABLE" && op !== "UNREACHABLE" && op !== "ABSENT") || id === undefined) {
+  if (op === undefined || id === undefined || (op !== "ABSENT" && !(VERDICTS as readonly string[]).includes(op))) {
     console.error(`${demoName}: bad expected line: ${line}`);
     process.exit(2);
   }
-  expectations.push({ op: op as Expectation["op"], id });
+  expectations.push({ op, id });
 }
 
 let failed = false;
 const seen = new Set<string>();
 for (const exp of expectations) {
   const finding = report.findings.find((f) => f.id === exp.id);
-  if (exp.op === "REACHABLE" && finding?.verdict !== "REACHABLE") {
-    console.error(`${demoName}: expected REACHABLE ${exp.id}, got ${finding?.verdict ?? "no finding"}`);
-    failed = true;
-  }
-  if (exp.op === "UNREACHABLE" && finding?.verdict !== "UNREACHABLE") {
-    console.error(`${demoName}: expected UNREACHABLE ${exp.id}, got ${finding?.verdict ?? "no finding"}`);
-    failed = true;
-  }
-  if (exp.op === "ABSENT" && finding !== undefined) {
-    console.error(`${demoName}: expected no finding for ${exp.id}, got ${finding.verdict}`);
+  if (exp.op === "ABSENT") {
+    if (finding !== undefined) {
+      console.error(`${demoName}: expected no finding for ${exp.id}, got ${finding.verdict}`);
+      failed = true;
+    }
+  } else if (finding === undefined || finding.verdict !== exp.op) {
+    console.error(`${demoName}: expected ${exp.op} ${exp.id}, got ${finding?.verdict ?? "no finding"}`);
     failed = true;
   }
   if (finding !== undefined) seen.add(exp.id);
@@ -71,4 +82,3 @@ for (const f of report.findings) {
 }
 if (failed) process.exit(1);
 console.log(`${demoName}: expected verdicts OK (${report.findings.length} findings)`);
-if (existsSync(expectedPath)) void expectedPath;

@@ -1,0 +1,7 @@
+{
+  "name": "native-boundary-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "dependencies": { "nativepkg": "1.0.0" }
+}

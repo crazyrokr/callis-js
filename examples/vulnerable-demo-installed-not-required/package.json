@@ -1,0 +1,7 @@
+{
+  "name": "installed-not-required-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "dependencies": { "ghostutil": "1.0.0" }
+}

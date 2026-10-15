@@ -2,7 +2,21 @@
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "vcs": { "enabled": false, "clientKind": "git", "root": "." },
   "files": {
-    "ignore": ["node_modules/**", "dist/**", "coverage/**", "bun.lock", "docs/**", "examples/**/node_modules/**"]
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      "coverage/**",
+      "bun/**",
+      "bun.lock",
+      "docs/**",
+      "examples/**/node_modules/**",
+      "examples/**/install/**",
+      "examples/**/out/**",
+      "examples/**/osv/**",
+      "examples/**/sbom.json",
+      "examples/**/vuln-mappings.json",
+      "examples/**/package.json"
+    ]
   },
   "formatter": {
     "enabled": true,

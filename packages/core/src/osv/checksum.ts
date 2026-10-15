@@ -7,13 +7,16 @@
 // parallelized in chunks.
 
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { byteOrderSort, sha256Hex as hashHex, sha256File } from "../util/hash.js";
 
 /** sha256 of every file under dir (recursively), keyed by relative path. */
 export async function hashAllFiles(dir: string): Promise<Map<string, string>> {
+  // Normalize first: redundant slashes in the argument must not change the
+  // relative keys (the pin is a function of the directory contents only).
+  const root = resolve(dir);
   const out = new Map<string, string>();
-  const queue: string[] = [dir];
+  const queue: string[] = [root];
   while (queue.length > 0) {
     const current = queue.pop() as string;
     const entries = await fs.readdir(current, { withFileTypes: true });
@@ -22,7 +25,7 @@ export async function hashAllFiles(dir: string): Promise<Map<string, string>> {
       if (entry.isDirectory()) {
         queue.push(full);
       } else if (entry.isFile()) {
-        const rel = full.startsWith(`${dir}/`) ? full.slice(dir.length + 1) : full;
+        const rel = full.startsWith(`${root}/`) ? full.slice(root.length + 1) : full;
         out.set(rel, await sha256File(full));
       }
     }

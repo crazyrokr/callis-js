@@ -1,11 +1,33 @@
-node_modules/
+# --- auto-generated: never commit -------------------------------------------
+# compiled binaries + SHA256SUMS
 dist/
+# test output
 coverage/
-.turbo/
 .lcov
-coverage/
 *.lcov
+.turbo/
+# Bun install/build cache (created by `bun install` in some environments)
+bun/
+# dependency installs (package manager output, at any level)
+node_modules/
+# the full OSV snapshot download (scripts/download-osv.sh) and its data dir
+# (root-level only: packages/models/data is COMMITTED curated catalogue data,
+# a different thing with the same name)
 osv-snapshot/
-data/
-.DS_Store
+/data/
+# e2e / demo run artifacts (reports, console logs, caches)
+examples/**/out/
+# logs and OS cruft
 *.log
+.DS_Store
+
+# NOTE: examples/*/install/ and examples/*/osv/ are COMMITTED on purpose —
+# hand-written fixture trees (installed package state and hand-pinned OSV
+# records) that DEFINE each golden demo; e2e.sh materializes the ignored
+# node_modules/ from install/ at run time.
+
+# The pnpm fixture layout nests packages under .pnpm/<pkg>@<ver>/node_modules/
+# — re-include those inside the committed demo trees (the global pattern
+# above would drop them from git-based checkouts, leaving broken symlinks).
+!examples/**/install/**/node_modules
+!examples/**/install/**/node_modules/**

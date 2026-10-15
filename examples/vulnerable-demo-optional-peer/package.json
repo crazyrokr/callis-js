@@ -1,0 +1,7 @@
+{
+  "name": "optional-peer-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "dependencies": { "socklib": "1.0.0" }
+}

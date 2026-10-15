@@ -14,7 +14,7 @@
     "lint": "biome check .",
     "check": "bun run typecheck && bun run lint && bun run coverage && bun tools/coverage-gate.ts",
     "build": "bun scripts/build.ts",
-    "e2e": "bun scripts/e2e.sh"
+    "e2e": "bash scripts/e2e.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

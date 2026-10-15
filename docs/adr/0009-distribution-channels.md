@@ -44,3 +44,41 @@ expanded v3.4 item 3, v3.5 item 4):**
 - **Size budget:** ~90 MB per platform accepted (plan §12 item 2; measured
   floor 81 MB, ~4 ms startup); the plain-JS distro and downloader-shim
   options stay for later releases, not v1.
+
+## M6 implementation notes (2026-10-15)
+
+The channels above are implemented and CI-gated:
+
+- **One entry, 8 targets.** `scripts/build.ts` compiles `packages/cli/src/main.ts`
+  to all 8 targets with `bun build --compile --minify --sourcemap
+  --target=<t> --no-compile-autoload-dotenv --no-compile-autoload-bunfig
+  --define BUILD_VERSION='"<version>"'`. Every artifact is validated before
+  it may ship: magic bytes match the family (ELF / Mach-O / PE),
+  `--version` exits 0 (host-family targets only), and `dist/SHA256SUMS`
+  verifies with `sha256sum -c`. `ci.yml` runs the host target + `binary-smoke`
+  + `binary-parity`; `build.yml` runs the full 8-target matrix + native smoke
+  on each runner; `release.yml` signs (cosign keyless, GitHub OIDC) and
+  attests (SPDX) every artifact, then publishes the GitHub Release;
+  `docker.yml` pushes the multi-arch image.
+- **Models are embedded, not read from disk.** The `@callis/models`
+  catalogue is `--asset`-embedded; Bun serves it FLAT next to the entry
+  (`/$bunfs/root/<basename>`). `loadModels()` tries the embedded candidate
+  before the workspace copy, so the binary runs from ANY directory with no
+  model files present (proven by `binary-smoke` check 3, an empty-cwd
+  analysis). A source checkout resolves the workspace copy instead (the flat
+  candidate is absent there — pinned by `callgraph.models-asset.test.ts`).
+- **Hostile cwd is a tested property, not an assumption.** The binary is
+  built with config autoloading off; `binary-smoke` check 4 plants a `.env`
+  (redirecting `XDG_CACHE_HOME`) and a syntactically broken `bunfig.toml`
+  inside the analyzed project and asserts neither changes behavior.
+- **Byte-identical across runtimes.** `binary-parity` requires the compiled
+  binary and the interpreted core to emit the same JSON (modulo
+  `durationMillis`), JUnit (modulo `time`), and SARIF (byte-for-byte) for
+  every golden demo — the release contract that a compile is behavior-neutral.
+- **Golden-demo fixtures are committed data, `node_modules/` is not.** Each
+  demo's installed state lives in `install/` (hand-written; the pnpm demo
+  carries its `.pnpm/` layout) and its hand-pinned OSV records in `osv/`;
+  `scripts/e2e.sh` materializes the gitignored `node_modules/` from `install/`
+  at run time, so a fresh checkout is enough to reproduce every demo.
+- **Measured (M6, Bun 1.4.2):** linux-x64 binary 85 MB with sourcemap +
+  embedded models; `--version` cold start ~121 ms end-to-end.

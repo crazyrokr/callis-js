@@ -1,0 +1,11 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    { "type": "library", "name": "socklib", "version": "1.0.0", "purl": "pkg:npm/socklib@1.0.0" }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/socklib@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/optional-peer-demo@1.0.0", "dependsOn": ["pkg:npm/socklib@1.0.0"] }
+  ]
+}

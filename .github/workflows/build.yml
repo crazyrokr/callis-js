@@ -1,0 +1,71 @@
+# callis-js build matrix (plan section 7).
+#
+#  all-targets: one ubuntu job cross-compiles ALL 8 targets (bun build
+#               --compile cross-compiles natively), validates magic bytes,
+#               and writes dist/SHA256SUMS.
+#  smoke: every NATIVE runner smokes its own architecture's binary
+#               (--version, empty-cwd analysis, hostile-cwd, bundle graph).
+#
+# Linux x64 glibc is the primary supported platform; musl + baseline are
+# supported; macOS/Windows builds are published but experimental/unsigned.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  all-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - run: bun run build
+      - name: Verify SHA256SUMS
+        run: |
+          cd dist
+          # sha256sum -c validates every line against the actual files.
+          sha256sum -c SHA256SUMS
+          cd ..
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-all-targets
+          path: dist/
+
+  smoke:
+    needs: all-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux-x64
+          - os: ubuntu-24.04-arm
+            suffix: linux-arm64
+          - os: macos-14
+            suffix: darwin-x64
+          - os: macos-15
+            suffix: darwin-arm64
+          - os: windows-latest
+            suffix: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-all-targets
+          path: dist/
+      - run: bun scripts/binary-smoke.ts --binary dist/callis-${{ matrix.suffix }}

@@ -1,0 +1,16 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    { "type": "library", "name": "drifted", "version": "2.5.0", "purl": "pkg:npm/drifted@2.5.0" },
+    { "type": "library", "name": "benign", "version": "1.0.0", "purl": "pkg:npm/benign@1.0.0" }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/drifted@2.5.0", "dependsOn": [] },
+    { "ref": "pkg:npm/benign@1.0.0", "dependsOn": [] },
+    {
+      "ref": "pkg:npm/version-drift-demo@1.0.0",
+      "dependsOn": ["pkg:npm/drifted@2.5.0", "pkg:npm/benign@1.0.0"]
+    }
+  ]
+}

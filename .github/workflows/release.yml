@@ -1,0 +1,73 @@
+# callis-js release (plan section 7, ADR 0009): the SIGNED, ATTESTED
+# distribution channel.
+#
+# On a version tag:
+#   build    — 8 targets + SHA256SUMS (verified with sha256sum -c)
+#   sign     — cosign keyless signing (GitHub OIDC) of every artifact
+#   attest   — cosign SPDX provenance per artifact
+#   publish  — GitHub Release with all artifacts
+#
+# Consumers NEVER trust the release's own SHA256SUMS for identity: they
+# verify a digest PINNED IN THEIR REPO (renovate-maintained) and the cosign
+# signature against the documented certificate identity — see
+# templates/callis-check.yml.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - name: Build all targets
+        run: bun run build
+      - name: Verify SHA256SUMS
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+          cd ..
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          version: "v2.5.3"
+      - name: Sign artifacts (keyless, GitHub OIDC)
+        env:
+          COSIGN_OIDC_ID_TOKEN: ${{ github.id_token }}
+          COSIGN_OIDC_PROVIDER: token.actions.githubusercontent.com
+        run: |
+          for f in dist/callis-*; do
+            cosign sign --oidc-provider https://token.actions.githubusercontent.com --oidc-token "$COSIGN_OIDC_ID_TOKEN" "$f"
+          done
+      - name: Attest provenance (SPDX)
+        env:
+          COSIGN_OIDC_ID_TOKEN: ${{ github.id_token }}
+        run: |
+          for f in dist/callis-*; do
+            cosign attest --predicate <(echo '{"predicateType":"https://spdx.dev/Document","spdxVersion":"SPDX-2.3","name":"callis-js","creator":"[Tool: callis-js release pipeline]"]'} \
+              --type spdx-json \
+              --oidc-provider https://token.actions.githubusercontent.com --oidc-token "$COSIGN_OIDC_ID_TOKEN" "$f"
+          done
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/callis-*
+            dist/SHA256SUMS
+          generate_release_notes: true
+      - name: Print verification recipe
+        run: |
+          echo "Consumers verify with:"
+          echo "  sha256sum -c <repo-pinned digest>  (digest pinned in the consumer repo, renovate-maintained)"
+          echo "  cosign verify callis-<os>-<arch> --certificate-identity callis-js@github.com --certificate-oidc-issuer https://token.actions.githubusercontent.com"

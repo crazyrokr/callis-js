@@ -1,0 +1,20 @@
+{
+  "id": "GHSA-424h-2jq2-7369",
+  "summary": "Prototype pollution in lodash",
+  "details": "Versions of lodash and lodash-es before 4.17.21 are vulnerable to prototype pollution.",
+  "severity": [
+    { "type": "CVSS_V3", "data": { "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L" } }
+  ],
+  "affected": [
+    {
+      "package": { "name": "lodash", "ecosystem": "npm", "purl": "pkg:npm/lodash" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "4.17.21" }] }]
+    },
+    {
+      "package": { "name": "lodash-es", "ecosystem": "npm", "purl": "pkg:npm/lodash-es" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "4.17.21" }] }]
+    }
+  ],
+  "aliases": ["CVE-2020-8203"],
+  "schema_version": "1.4.0"
+}

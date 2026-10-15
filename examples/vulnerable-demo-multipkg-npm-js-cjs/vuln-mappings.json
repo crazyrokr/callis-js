@@ -1,0 +1,6 @@
+{
+  "CVE-2020-8203": [
+    { "package": "lodash", "export": "template" },
+    { "package": "lodash-es", "export": "template" }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "version": "1",
+  "files": [
+    { "name": "library-models.json", "role": "library-models" },
+    { "name": "entry-point-annotations.json", "role": "entry-point-annotations" },
+    { "name": "callback-interfaces.json", "role": "callback-interfaces" }
+  ]
+}

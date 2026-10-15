@@ -1,0 +1,5 @@
+{
+  "GHSA-imp-0004": [
+    { "package": "impfx", "export": "doWork" }
+  ]
+}

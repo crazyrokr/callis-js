@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-vuln-0006",
+  "summary": "Fixture advisory for vulnpkg",
+  "affected": [
+    {
+      "package": { "name": "vulnpkg", "ecosystem": "npm", "purl": "pkg:npm/vulnpkg" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

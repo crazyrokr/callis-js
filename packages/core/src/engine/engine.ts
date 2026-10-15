@@ -363,7 +363,7 @@ function dynamicRiskCount(
   let n = 0;
   const seen = new Set<string>();
   for (const f of findings) {
-    if (f.verdict !== "UNREACHABLE" || !f.evidence.loaded || seen.has(f.id)) continue;
+    if (f.verdict !== "UNREACHABLE" || seen.has(f.id)) continue;
     const targetDir = purlDirs.get(f.purl);
     if (targetDir === undefined) continue;
     let plausible = false;
@@ -633,7 +633,9 @@ export async function runAnalysis(optsIn: EngineOptions, console: Console = DEFA
   const devNotice = allDevNotice(sbom.components);
   if (devNotice !== null) notices.push({ code: "DEV_ONLY", message: devNotice });
   for (const c of candidates) {
-    if (c.matchedOn === "installed" && c.componentVersion !== undefined && c.instance !== null) {
+    // SBOM-sourced only: an installed-source candidate's componentVersion is
+    // the instance's own version, not an SBOM version (no drift to report).
+    if (c.source === "sbom" && c.matchedOn === "installed" && c.componentVersion !== undefined && c.instance !== null) {
       notices.push({
         code: "SBOM_DRIFT",
         purl: c.purl,
@@ -689,6 +691,12 @@ export async function runAnalysis(optsIn: EngineOptions, console: Console = DEFA
     dynamicRiskCount(findings, graph, model, tieGraph, purlDirs),
     graph?.stats.unscopedMarkers ?? 0,
   );
+  if (exposure.dynamicRisk > 0) {
+    notices.push({
+      code: "DYNAMIC_RISK",
+      message: `${exposure.dynamicRisk} UNREACHABLE finding(s) of installed packages could plausibly be loaded by a dynamic construct in application code (dynamic require/import/eval)`,
+    });
+  }
   const limitations = computeLimitations({
     dynamicMarkers: graph?.stats.dynamicMarkers ?? 0,
     importTimeReachable,

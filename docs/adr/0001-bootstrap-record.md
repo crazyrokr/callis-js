@@ -26,6 +26,13 @@
   floor; ~4 ms startup; workers in compiled binaries only as separate compile
   entries; config autoloading from cwd is ON by default in compiled binaries
   (hardened off, ADR 0017).
+- **M6 compile measurements (2026-10-15, Bun 1.4.2, `--asset`-embedded
+  models):** the `--asset <file>` flag embeds a file and serves it FLAT at
+  `/$bunfs/root/<basename>` next to the entry; `import.meta.url` of the entry
+  is `file:///$bunfs/root/<binary>`; `--define BUILD_VERSION='"x"'` rewrites
+  the bare identifier and survives `typeof BUILD_VERSION` (no define → the
+  literal fallback). linux-x64 binary: 85 MB (sourcemap + embedded models),
+  `--version` cold start ~121 ms.
 
 ## Index
 

@@ -1,0 +1,8 @@
+{
+  "name": "import-time-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "dependencies": { "impfx": "1.0.0" }
+}

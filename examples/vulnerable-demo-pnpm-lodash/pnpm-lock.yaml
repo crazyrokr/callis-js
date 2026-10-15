@@ -1,0 +1,16 @@
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+
+packages:
+  /lodash@4.17.20:
+    resolution: {integrity: sha512-fixture}
+    engines: {node: '>=0.10.0'}
+  /express@4.19.0:
+    resolution: {integrity: sha512-fixture}
+    engines: {node: '>=0.10.0'}
+
+snapshots:
+  /lodash@4.17.20: {}
+  /express@4.19.0: {}

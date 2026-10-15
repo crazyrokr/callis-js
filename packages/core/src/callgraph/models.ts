@@ -64,24 +64,49 @@ async function readJson(file: string): Promise<unknown> {
 }
 
 /**
- * Load the model catalogue from a data directory (default: the workspace
- * @callis/models data dir). A missing directory is a hard error — the models
+ * Candidate URLs for one catalogue file. The first is the compiled-binary
+ * shape: bun --asset embeds the file FLAT next to the entry, and Bun serves
+ * it at the URL import.meta.url resolves to (measured: /$bunfs/root/<name>,
+ * Bun 1.4.2). The second is the workspace @callis/models copy (source
+ * checkout, bun run / bun test).
+ */
+export function modelFileCandidates(file: string): URL[] {
+  return [new URL(file, import.meta.url), new URL(`../../../models/data/${file}`, import.meta.url)];
+}
+
+async function readAsset(file: string): Promise<unknown> {
+  let lastError: Error | null = null;
+  for (const url of modelFileCandidates(file)) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return await res.json();
+      lastError = new Error(`HTTP ${res.status} for ${url.href}`);
+    } catch (e) {
+      lastError = e as Error;
+    }
+  }
+  throw new Error(`models: cannot load ${file} (embedded asset or workspace copy): ${lastError?.message ?? "unknown"}`);
+}
+
+/**
+ * Load the model catalogue (default: embedded assets in the compiled binary,
+ * the workspace @callis/models data in a source checkout). An explicit
+ * directory is read from disk. A missing source is a hard error — the models
  * are part of the soundness contract, not an optional extra.
  */
 export async function loadModels(dataDir?: string): Promise<ModelCatalog> {
-  const dir = dataDir ?? defaultDataDir();
-  const [rawModels, rawAnnotations, rawInterfaces] = await Promise.all([
-    readJson(join(dir, "library-models.json")),
-    readJson(join(dir, "entry-point-annotations.json")),
-    readJson(join(dir, "callback-interfaces.json")),
-  ]);
-  return validateCatalog(rawModels, rawAnnotations, rawInterfaces);
-}
-
-export function defaultDataDir(): string {
-  // packages/core/src/callgraph -> ../../../models/data (source checkout);
-  // the compiled binary passes the embedded asset directory explicitly.
-  return join(import.meta.dir, "..", "..", "..", "models", "data");
+  const files = ["library-models.json", "entry-point-annotations.json", "callback-interfaces.json"] as const;
+  const docs =
+    dataDir !== undefined
+      ? await Promise.all(
+          files.map((f) =>
+            readJson(join(dataDir, f)).catch((e: Error) => {
+              throw new Error(`models: cannot read ${f} from ${dataDir}: ${e.message}`);
+            }),
+          ),
+        )
+      : await Promise.all(files.map((f) => readAsset(f)));
+  return validateCatalog(docs[0] as unknown, docs[1] as unknown, docs[2] as unknown);
 }
 
 /** Validate + normalize the three catalogue documents (untrusted shape check). */

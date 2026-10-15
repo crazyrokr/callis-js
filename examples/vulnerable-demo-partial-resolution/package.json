@@ -1,0 +1,10 @@
+{
+  "name": "partial-resolution-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "dependencies": {
+    "vulnpkg": "1.0.0",
+    "benign": "1.0.0"
+  }
+}
