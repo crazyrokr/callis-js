@@ -3,6 +3,7 @@
 export * from "./types.js";
 export * from "./models.js";
 export { CallGraphBuilder, buildGraph, type BuildResult } from "./builder.js";
+export { dispatchClosure, supertypeClosures, type ExtendsMap } from "./pointer.js";
 export { makeLinker, type LinkerOptions } from "./linker.js";
 export {
   appFilesOf,

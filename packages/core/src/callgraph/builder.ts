@@ -24,6 +24,7 @@
 import type { FunctionSummary, ModuleIR } from "../frontend/index.js";
 import type { TopLevelStmt } from "../frontend/types.js";
 import { type LibraryModel, callbackArgsOf, modelForCall } from "./models.js";
+import { type ExtendsMap, dispatchClosure, supertypeClosures } from "./pointer.js";
 import {
   type BuildInput,
   type CallGraph,
@@ -50,6 +51,10 @@ interface FunctionState {
   returnFlow: Set<string>;
   /** "a.b" / "Foo.m" (prototype normalized) → assigned functions. */
   memberFlow: Map<string, Set<string>>;
+  /** M7a: local name → class node ids (inclusion-based object typing). */
+  typeFlow: Map<string, Set<string>>;
+  /** M7a: class node ids returned via `return new C(...)`. */
+  returnTypes: Set<string>;
 }
 
 interface ImportLink {
@@ -94,6 +99,16 @@ export class CallGraphBuilder {
   private classMembers = new Map<string, string[]>();
   /** file → className → base class name (from IR classBases). */
   private classHierarchy = new Map<string, Map<string, string>>();
+  // --- M7a pointer analysis state -------------------------------------------
+  /** Class node id → base class node id (extends, resolved at load; null = no base). */
+  private extendsEdges: ExtendsMap = new Map();
+  /** Bumped whenever extendsEdges changes (closure recompute trigger). */
+  private closureVersion = 0;
+  private pointerClosures: Map<string, Set<string>> | null = null;
+  private pointerClosuresVersion = -1;
+  /** M7a: function id → parameter name → class ids passed at call sites. */
+  private paramTypes = new Map<string, Map<string, Set<string>>>();
+  private pointerStats = { sites: 0, added: 0, pruned: 0 };
   /** Nodes currently being processed (cycle guard for eager processing). */
   private processing = new Set<string>();
   /** Nodes fully processed (idempotency across worklist + eager paths). */
@@ -183,6 +198,8 @@ export class CallGraphBuilder {
         paramFlow: new Map(),
         returnFlow: new Set(),
         memberFlow: new Map(),
+        typeFlow: new Map(),
+        returnTypes: new Set(),
       };
       this.functions.set(state.id, state);
       if (!mod.functions.has(summary.name)) mod.functions.set(summary.name, state);
@@ -218,6 +235,18 @@ export class CallGraphBuilder {
       if (c.base !== undefined) hierarchy.set(c.name, c.base);
     }
     this.classHierarchy.set(file, hierarchy);
+
+    // M7a: resolved extends edges (base name → class node id). An unresolved
+    // base ends the supertype chain (documented limitation: an exotic base
+    // hides inherited dispatch, it never invents targets).
+    for (const c of ir.classBases) {
+      const node = mod.classes.get(c.name);
+      if (node === undefined) continue;
+      const baseNode =
+        c.base === undefined ? null : (mod.classes.get(c.base) ?? (await this.classViaImport(file, c.base)));
+      this.extendsEdges.set(node.id, baseNode?.id ?? null);
+      this.closureVersion += 1;
+    }
 
     mod.imports = this.importLinks(ir);
     for (const imp of mod.imports) imp.target = this.resolveTarget(file, imp.specifier, imp.kind);
@@ -374,6 +403,12 @@ export class CallGraphBuilder {
     for (const a of fn.summary.assignments) await this.recordAssignment(fn, a);
     for (const r of fn.summary.returns) {
       for (const t of await this.refTargets(fn, r, true)) fn.returnFlow.add(t);
+      // M7a: `return new C(...)` → the function's return type set.
+      const m = /^new\s+([A-Za-z_$][\w$]*)/.exec(r);
+      if (m !== null && m[1] !== undefined) {
+        const cls = this.classByName(fn.file, m[1]) ?? (await this.classViaImport(fn.file, m[1]));
+        if (cls !== null) fn.returnTypes.add(cls.id);
+      }
     }
     for (const c of fn.summary.calls) await this.resolveCallSite(fn, c);
   }
@@ -478,6 +513,10 @@ export class CallGraphBuilder {
         this.newFlow.set(a.target, nf);
       }
     }
+    // M7a: object-type facts are only consumed in pointer mode; recording
+    // them (and eager-processing callees for return types) in default builds
+    // would change processing order and break the byte-identical contract.
+    if (this.pointerMode()) await this.recordTypeAssignment(fn, a);
     // bind alias (model kind "alias"): `f = g.bind(ctx)` flows to g
     const bind = /^([A-Za-z_$][\w$]*)\.bind\(/.exec(a.value);
     if (bind !== null && bind[1] !== undefined && a.kind === "identifier") {
@@ -522,10 +561,24 @@ export class CallGraphBuilder {
       const arg = args[i];
       if (arg === undefined) continue;
       const param = target.summary.params[i];
-      if (param === undefined || !isIdentifierText(arg)) continue;
-      const set = target.paramFlow.get(param) ?? new Set<string>();
-      for (const t of await this.refTargets(fn, arg, true)) set.add(t);
-      target.paramFlow.set(param, set);
+      if (param === undefined) continue;
+      if (isIdentifierText(arg)) {
+        const set = target.paramFlow.get(param) ?? new Set<string>();
+        for (const t of await this.refTargets(fn, arg, true)) set.add(t);
+        target.paramFlow.set(param, set);
+      }
+      // M7a: object-type flow into the parameter (identifiers and `new C`).
+      // Pointer mode only — the eager callee processing inside must not run
+      // in default builds (processing-order contract).
+      if (!this.pointerMode()) continue;
+      const argTypes = await this.pointerArgTypes(fn, arg);
+      if (argTypes.size > 0) {
+        const pt = this.paramTypes.get(targetId) ?? new Map<string, Set<string>>();
+        const tset = pt.get(param) ?? new Set<string>();
+        for (const c of argTypes) tset.add(c);
+        pt.set(param, tset);
+        this.paramTypes.set(targetId, pt);
+      }
     }
   }
 
@@ -572,15 +625,24 @@ export class CallGraphBuilder {
 
     // 1. RTA: methods named m on instantiated classes whose instance flows
     //    to the receiver — declared members AND `Cls.prototype.m = fn` flow.
-    for (const [clsId, members] of this.classMembers) {
-      if (!this.instantiated.has(clsId)) continue;
-      const receivers = this.newFlow.get(base);
-      if (receivers === undefined || !receivers.has(clsId)) continue;
-      for (const member of members) {
-        if (member.endsWith(`.${m}`) && !member.endsWith(".#constructor")) targets.add(member);
+    //    M7a: with --pointer-analysis and a PROVABLE receiver typing, the
+    //    function-scoped type closure replaces the text-merged newFlow
+    //    lookup (inherited dispatch + no cross-function identifier merge).
+    //    Unknown receiver → the default below, edge for edge.
+    const pointer = this.pointerMode() ? this.pointerTargets(fn, base, m) : null;
+    if (pointer !== null) {
+      for (const t of pointer.targets) targets.add(t);
+    } else {
+      for (const [clsId, members] of this.classMembers) {
+        if (!this.instantiated.has(clsId)) continue;
+        const receivers = this.newFlow.get(base);
+        if (receivers === undefined || !receivers.has(clsId)) continue;
+        for (const member of members) {
+          if (member.endsWith(`.${m}`) && !member.endsWith(".#constructor")) targets.add(member);
+        }
+        const protoKey = `${this.classNodes.get(clsId)?.name ?? ""}.${m}`;
+        for (const t of fn.memberFlow.get(protoKey) ?? []) targets.add(t);
       }
-      const protoKey = `${this.classNodes.get(clsId)?.name ?? ""}.${m}`;
-      for (const t of fn.memberFlow.get(protoKey) ?? []) targets.add(t);
     }
     // 2. member flow (a.b = fn / Foo.prototype.m = fn)
     for (const t of fn.memberFlow.get(c.callee) ?? []) targets.add(t);
@@ -879,6 +941,148 @@ export class CallGraphBuilder {
 
   // --- emission -----------------------------------------------------------------
 
+  // --- M7a pointer analysis (inclusion-based receiver typing) ---------------
+
+  private pointerMode(): boolean {
+    return this.input.options?.pointerAnalysis === true;
+  }
+
+  /** Memoized supertype closures (rebuilt only when the class lattice changes). */
+  private closuresNow(): Map<string, Set<string>> {
+    if (this.pointerClosures === null || this.pointerClosuresVersion !== this.closureVersion) {
+      this.pointerClosures = supertypeClosures(this.extendsEdges);
+      this.pointerClosuresVersion = this.closureVersion;
+    }
+    return this.pointerClosures;
+  }
+
+  /**
+   * The receiver's type set in this function (Andersen inclusion): local
+   * type flow, parameter types from every call site, call-result types.
+   * Null = no facts — the conservative fallback keeps the DEFAULT RTA
+   * (never fewer edges than the sound default).
+   */
+  private pointerReceiverTypes(fn: FunctionState, base: string): Set<string> | null {
+    if (!isIdentifierText(base)) return null;
+    const out = new Set<string>();
+    for (const c of fn.typeFlow.get(base) ?? []) out.add(c);
+    for (const c of this.paramTypes.get(fn.id)?.get(base) ?? []) out.add(c);
+    return out.size > 0 ? out : null;
+  }
+
+  /** Object types an argument expression carries at this call site. */
+  private async pointerArgTypes(fn: FunctionState, arg: string): Promise<Set<string>> {
+    const out = new Set<string>();
+    const m = /^new\s+([A-Za-z_$][\w$]*)/.exec(arg);
+    if (m !== null && m[1] !== undefined) {
+      const cls = this.classByName(fn.file, m[1]) ?? (await this.classViaImport(fn.file, m[1]));
+      if (cls !== null) out.add(cls.id);
+      return out;
+    }
+    if (isIdentifierText(arg)) {
+      for (const c of fn.typeFlow.get(arg) ?? []) out.add(c);
+      for (const c of this.paramTypes.get(fn.id)?.get(arg) ?? []) out.add(c);
+      return out;
+    }
+    if (isCallText(arg)) {
+      const callee = arg.slice(0, arg.indexOf("("));
+      if (!isIdentifierText(callee)) return out;
+      for (const t of await this.flowOf(fn, callee, false)) {
+        await this.processNode(t);
+        for (const c of this.functions.get(t)?.returnTypes ?? []) out.add(c);
+      }
+      const via = await this.importTarget(fn.file, callee, callee, false);
+      if (via !== null) {
+        await this.processNode(via);
+        for (const c of this.functions.get(via)?.returnTypes ?? []) out.add(c);
+      }
+      return out;
+    }
+    return out;
+  }
+
+  /**
+   * The refined dispatch at `base.m()`: every class in the receiver's type
+   * closure (itself + supertype chain — inherited dispatch), plus the
+   * default RTA diff at the same site for the stats. Null when the receiver
+   * typing is unknown (the caller then keeps the default step 1 verbatim).
+   */
+  private pointerTargets(
+    fn: FunctionState,
+    base: string,
+    m: string,
+  ): { targets: Set<string>; added: number; pruned: number } | null {
+    const receiver = this.pointerReceiverTypes(fn, base);
+    if (receiver === null) return null;
+    this.pointerStats.sites += 1;
+    const closure = dispatchClosure(receiver, this.closuresNow());
+
+    const memberOf = (clsId: string): Set<string> => {
+      const out = new Set<string>();
+      for (const member of this.classMembers.get(clsId) ?? []) {
+        if (member.endsWith(`.${m}`) && !member.endsWith(".#constructor")) out.add(member);
+      }
+      const protoKey = `${this.classNodes.get(clsId)?.name ?? ""}.${m}`;
+      for (const t of fn.memberFlow.get(protoKey) ?? []) out.add(t);
+      return out;
+    };
+
+    const targets = new Set<string>();
+    for (const clsId of closure) for (const t of memberOf(clsId)) targets.add(t);
+
+    // Default step 1 at the same site (the stats diff only).
+    const defTargets = new Set<string>();
+    for (const [clsId] of this.classMembers) {
+      if (!this.instantiated.has(clsId)) continue;
+      const rs = this.newFlow.get(base);
+      if (rs === undefined || !rs.has(clsId)) continue;
+      for (const t of memberOf(clsId)) defTargets.add(t);
+    }
+    let added = 0;
+    let pruned = 0;
+    for (const t of targets) if (!defTargets.has(t)) added += 1;
+    for (const t of defTargets) if (!targets.has(t)) pruned += 1;
+    this.pointerStats.added += added;
+    this.pointerStats.pruned += pruned;
+    return { targets, added, pruned };
+  }
+
+  /** M7a: object-type facts for one assignment (`x = new C` / `x = y` / `x = f()`). */
+  private async recordTypeAssignment(fn: FunctionState, a: FunctionSummary["assignments"][number]): Promise<void> {
+    if (a.kind !== "identifier") return;
+    const add = (cls: string): void => {
+      const set = fn.typeFlow.get(a.target) ?? new Set<string>();
+      set.add(cls);
+      fn.typeFlow.set(a.target, set);
+    };
+    const m = /^new\s+([A-Za-z_$][\w$]*)/.exec(a.value);
+    if (m !== null && m[1] !== undefined) {
+      const cls = this.classByName(fn.file, m[1]) ?? (await this.classViaImport(fn.file, m[1]));
+      if (cls !== null) add(cls.id);
+      return;
+    }
+    if (isIdentifierText(a.value)) {
+      for (const c of fn.typeFlow.get(a.value) ?? []) add(c);
+      for (const c of this.paramTypes.get(fn.id)?.get(a.value) ?? []) add(c);
+      return;
+    }
+    if (isCallText(a.value)) {
+      const callee = a.value.slice(0, a.value.indexOf("("));
+      if (!isIdentifierText(callee)) return;
+      // Eager: a callee not processed yet has no return types recorded; the
+      // cycle guard in processNode keeps this safe.
+      for (const t of await this.flowOf(fn, callee, false)) {
+        await this.processNode(t);
+        for (const c of this.functions.get(t)?.returnTypes ?? []) add(c);
+      }
+      const via = await this.importTarget(fn.file, callee, callee, false);
+      if (via !== null) {
+        await this.processNode(via);
+        for (const c of this.functions.get(via)?.returnTypes ?? []) add(c);
+      }
+    }
+  }
+
   private emit(): CallGraph {
     const nodes: GraphNode[] = [];
     const seen = new Set<string>();
@@ -918,6 +1122,7 @@ export class CallGraphBuilder {
         edges: edges.length,
         dynamicMarkers: markers.length,
         unscopedMarkers: unscoped,
+        ...(this.pointerMode() ? { pointer: { ...this.pointerStats } } : {}),
       },
     };
   }
