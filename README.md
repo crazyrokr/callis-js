@@ -57,7 +57,10 @@ disabled at build time — `scripts/binary-smoke.ts` proves both).
 Every report (`<base>.json`, `<base>.junit.xml`, `<base>.sarif`) carries
 `analysisStatus`, `completeness`, `exposure`, `limitations` and the full
 `meta.exitReasons[]` list of every triggered condition, independent of the
-precedence winner.
+precedence winner. The SARIF carries `codeFlows` for every finding with a
+call path: one physical source location (file + line) per hop, so
+code-scanning UIs show the real call chain from the entry point to the
+vulnerable function (the SBOM file stays the result anchor).
 
 ## Releasing a version
 

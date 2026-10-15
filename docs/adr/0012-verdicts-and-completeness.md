@@ -62,3 +62,17 @@ forward-compatible. **`limitations`**: a machine-readable array of this
 run's material analysis limitations (unsupported forms actually
 encountered, the import-time caveat, the `callbackInvoked` gap, native
 opacity).
+
+**SARIF `codeFlows` (M7b, 2026-10-15):** findings with a call path carry a
+`codeFlows` array — one flow, one threadFlow, one location per path hop —
+where every hop is a PHYSICAL location (node `file` + declaration `line`
+from the built graph, so code-scanning UIs anchor the real call chain). A
+hop whose node is absent from the graph's location map degrades to a
+logical location (`file#name`, the stable node identity) rather than
+disappearing. The result-level `locations` array holds ONLY the SBOM-file
+anchor (the previous per-hop logical entries moved into `codeFlows`);
+findings without a path have no `codeFlows`. The node-location map is
+engine-internal (derived from the graph at report time) — it is NOT part
+of `AnalysisResult`, so the JSON report contract is unchanged (M7b
+verified by `report.codeflows.test.ts`, which cross-checks every codeFlow
+hop against the JSON `path` and the on-disk file).

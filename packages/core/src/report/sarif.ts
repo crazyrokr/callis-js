@@ -1,15 +1,24 @@
 // SARIF 2.1.0 writer (plan section 5.6, JVM ADR 0010 parity).
 //
 // One result per finding: ruleId = canonical advisory id, message carries
-// the call trace, the PHYSICAL location is the SBOM file (so GitHub
-// code-scanning has an anchor), and each trace hop is a logical location
-// `file#name` (stable node identity). Unknown verdicts/properties stay
-// forward-compatible (schema 2.1.0, schemaVersion independent).
+// the call trace, and the PHYSICAL location is the SBOM file (so GitHub
+// code-scanning has an anchor). M7b: findings with a call path also carry
+// `codeFlows` — one threadFlow per path, each hop a PHYSICAL location
+// (file + line) from the graph's node locations; a hop without a known
+// node falls back to a logical location `file#name` (stable node
+// identity). Unknown verdicts/properties stay forward-compatible (schema
+// 2.1.0, schemaVersion independent).
 
 import { writeFile } from "node:fs/promises";
 import type { Finding } from "../verdict/types.js";
 import { traceMessage } from "./junit.js";
 import type { AnalysisResult } from "./types.js";
+
+/** The source location of one graph node (the codeFlow physical anchor). */
+export interface NodeLocation {
+  file: string;
+  line: number;
+}
 
 const SEVERITY_TO_LEVEL: Record<string, string> = {
   CRITICAL: "error",
@@ -22,10 +31,31 @@ function levelOf(severity: string): string {
   return SEVERITY_TO_LEVEL[severity.toUpperCase()] ?? "note";
 }
 
+/** One codeFlow location for a path node: physical (file + line) when the
+ *  node is in the location map, logical (stable node id) when it is not. */
+function hopOf(node: string, nodeLocations: Record<string, NodeLocation> | undefined): Record<string, unknown> {
+  const loc = nodeLocations?.[node];
+  if (loc !== undefined) {
+    return {
+      physicalLocation: {
+        artifactLocation: { uri: loc.file },
+        region: { startLine: loc.line },
+      },
+    };
+  }
+  return {
+    logicalLocations: [{ name: node, kind: node.endsWith("#<module-init>") ? "module" : "function" }],
+  };
+}
+
 /** One SARIF result (stable field order). */
-function resultOf(f: Finding, sbomFile: string): Record<string, unknown> {
-  // Physical location at the SBOM file (GitHub code-scanning anchor); each
-  // trace hop is a logical location with the stable node identity.
+function resultOf(
+  f: Finding,
+  sbomFile: string,
+  nodeLocations: Record<string, NodeLocation> | undefined,
+): Record<string, unknown> {
+  // The result-level physical location is the SBOM file (GitHub
+  // code-scanning anchor). The call path rides in codeFlows (M7b).
   const locations: Record<string, unknown>[] = [
     {
       physicalLocation: {
@@ -33,11 +63,6 @@ function resultOf(f: Finding, sbomFile: string): Record<string, unknown> {
       },
     },
   ];
-  for (const node of f.path) {
-    locations.push({
-      logicalLocations: [{ name: node, kind: node.endsWith("#<module-init>") ? "module" : "function" }],
-    });
-  }
   const properties: Record<string, unknown> = {
     purl: f.purl,
     verdict: f.verdict,
@@ -58,6 +83,17 @@ function resultOf(f: Finding, sbomFile: string): Record<string, unknown> {
     level: levelOf(f.severity),
     message: { text: traceMessage(f) },
     locations,
+    ...(f.path.length > 0
+      ? {
+          codeFlows: [
+            {
+              id: 1,
+              message: { text: traceMessage(f) },
+              threadFlows: [{ locations: f.path.map((node) => hopOf(node, nodeLocations)) }],
+            },
+          ],
+        }
+      : {}),
     properties,
   };
 }
@@ -71,13 +107,15 @@ function ruleOf(f: Finding): Record<string, unknown> {
   };
 }
 
-/** The exact SARIF 2.1.0 document (stable order: findings pre-sorted). */
-export function sarifDocument(result: AnalysisResult): string {
+/** The exact SARIF 2.1.0 document (stable order: findings pre-sorted).
+ *  `nodeLocations` (optional, from the built graph) turns codeFlow hops
+ *  into physical locations; without it the hops stay logical node ids. */
+export function sarifDocument(result: AnalysisResult, nodeLocations?: Record<string, NodeLocation>): string {
   const rules = new Map<string, Record<string, unknown>>();
   const results: Record<string, unknown>[] = [];
   for (const f of result.findings) {
     if (!rules.has(f.id)) rules.set(f.id, ruleOf(f));
-    results.push(resultOf(f, result.meta.sbomFile));
+    results.push(resultOf(f, result.meta.sbomFile, nodeLocations));
   }
   const doc = {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-2.1.0.json",
@@ -104,6 +142,10 @@ export function sarifDocument(result: AnalysisResult): string {
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 
-export async function writeSarifReport(result: AnalysisResult, file: string): Promise<void> {
-  await writeFile(file, sarifDocument(result), "utf8");
+export async function writeSarifReport(
+  result: AnalysisResult,
+  file: string,
+  nodeLocations?: Record<string, NodeLocation>,
+): Promise<void> {
+  await writeFile(file, sarifDocument(result, nodeLocations), "utf8");
 }
