@@ -1,10 +1,23 @@
-# callis-js container images (plan section 7): multi-arch ghcr.io images.
+# callis-js container images (plan section 7, per-platform M7d).
 #
-#  push to main -> :main-<sha7> and :latest
-#  tag v*       -> :<tag>
+# One image per linux platform variant — five runnable images — plus the
+# M6 multi-arch glibc default:
+#   :latest, :main-<sha7>, :<ver>                 multi-arch glibc (amd64+arm64)
+#   :<ver>-linux-x64                              glibc, amd64
+#   :<ver>-linux-x64-baseline                     glibc, amd64, AVX2-less CPUs
+#   :<ver>-linux-x64-musl                         musl, amd64
+#   :<ver>-linux-arm64                            glibc, arm64
+#   :<ver>-linux-arm64-musl                       musl, arm64
+# Per-platform tags are published on version tags only (main gets the
+# multi-arch default only). darwin/windows binaries are NOT container-
+# runnable (a linux container cannot exec Mach-O/PE) — those ship via the
+# npm packages and the GitHub release assets only.
 #
-# The image carries only the prebuilt binary (models embedded); the mount
+# The images carry only the prebuilt binary (models embedded); the mount
 # contract is: project at /workspace (the default --project).
+#
+# workflow_dispatch with push: false builds+smokes without pushing to GHCR
+# (also the path local `act` runs take).
 name: docker
 
 on:
@@ -12,13 +25,23 @@ on:
     branches: [main]
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the images to GHCR
+        type: choice
+        options: ["true", "false"]
+        default: "true"
 
 permissions:
   contents: read
   packages: write
 
+env:
+  PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push == 'true' }}
+
 jobs:
-  buildx:
+  images:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,28 +49,119 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install
-      # The image needs only the two linux glibc binaries (not all 8).
-      - run: bun run build -- --only linux-x64,linux-arm64
+      # The images need only the five linux binaries (not all 8).
+      - run: bun run build -- --only linux-x64,linux-arm64,linux-x64-musl,linux-arm64-musl,linux-x64-baseline
+      # SHA256SUMS entries are relative to the repo root (dist/...).
+      - run: sha256sum -c dist/SHA256SUMS
+      - name: Compute image tags
+        id: tags
+        env:
+          IMG: ghcr.io/${{ github.repository_owner }}/callis-js
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            multi="$IMG:main-${GITHUB_SHA:0:7} $IMG:latest"
+            per=""
+          else
+            multi="$IMG:$ver"
+            per="$IMG:$ver-linux-x64 $IMG:$ver-linux-x64-baseline $IMG:$ver-linux-x64-musl $IMG:$ver-linux-arm64 $IMG:$ver-linux-arm64-musl"
+          fi
+          {
+            echo "multi=$multi"
+            echo "multi_first=$(echo "$multi" | awk '{print $1}')"
+            echo "x64=$(echo "$per" | awk '{print $1}')"
+            echo "baseline=$(echo "$per" | awk '{print $2}')"
+            echo "muslx64=$(echo "$per" | awk '{print $3}')"
+            echo "arm64=$(echo "$per" | awk '{print $4}')"
+            echo "muslarm64=$(echo "$per" | awk '{print $5}')"
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/callis-js
-          tags: |
-            {{commit_sha}}=main-{{sha}}
-            {{is_default_branch}}=latest
-            {{is_tag}}={{tag_name}}
-      - uses: docker/build-push-action@v6
+      - name: Build the multi-arch glibc image (the M6 default)
+        uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.multi }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Build the linux-x64 image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: ${{ env.PUSH == 'true' }}
+          load: ${{ env.PUSH == 'false' }}
+          tags: ${{ steps.tags.outputs.x64 }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Build the linux-x64-baseline image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          build-args: VARIANT=baseline
+          platforms: linux/amd64
+          push: ${{ env.PUSH == 'true' }}
+          load: ${{ env.PUSH == 'false' }}
+          tags: ${{ steps.tags.outputs.baseline }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Build the linux-x64-musl image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.musl
+          platforms: linux/amd64
+          push: ${{ env.PUSH == 'true' }}
+          load: ${{ env.PUSH == 'false' }}
+          tags: ${{ steps.tags.outputs.muslx64 }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Build the linux-arm64 image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.arm64 }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Build the linux-arm64-musl image
+        if: github.ref_type == 'tag'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.musl
+          platforms: linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.muslarm64 }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      # Every amd64 image runs natively on the runner: smoke the exact
+      # artifact (pulled from GHCR when pushed, loaded locally otherwise).
+      # The arm64 images are qemu-emulated here — their binaries are
+      # validated by the build-time contract (magic bytes + host smoke)
+      # instead.
+      - name: Smoke the amd64 images
+        if: github.ref_type == 'tag'
+        env:
+          PUSH: ${{ env.PUSH }}
+        run: |
+          # ENTRYPOINT is the binary itself: pass flags only.
+          smoke_local() { docker run --rm "$1" --version; }
+          smoke_pushed() { docker pull "$1" >/dev/null && docker run --rm "$1" --version; }
+          for t in ${{ steps.tags.outputs.x64 }} ${{ steps.tags.outputs.baseline }} ${{ steps.tags.outputs.muslx64 }}; do
+            if [ "$PUSH" = "true" ]; then smoke_pushed "$t"; else smoke_local "$t"; fi
+          done
+      - name: Smoke the multi-arch default image (as published)
+        if: env.PUSH == 'true'
+        run: docker pull ${{ steps.tags.outputs.multi_first }} >/dev/null && docker run --rm ${{ steps.tags.outputs.multi_first }} --version

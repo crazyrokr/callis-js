@@ -1,0 +1,40 @@
+# callis-js musl container image (plan section 7, per-platform M7d).
+#
+# alpine base (musl libc) for the musl binaries — the glibc images live in
+# Dockerfile (debian base). The binary carries the @callis/models catalogue
+# embedded via --asset, so NO model files are needed in the image or at
+# runtime.
+#
+# buildx provides TARGETARCH per platform:
+#   amd64 -> callis-linux-x64-musl, arm64 -> callis-linux-arm64-musl
+#
+# Usage (project mounted at /workspace, the default --project):
+#   docker run -v $(pwd):/workspace ghcr.io/<org>/callis-js:<tag>-linux-<arch>-musl \
+#     --sbom sbom.json --osv-dir osv
+#
+# The binary is built with --no-compile-autoload-dotenv and
+# --no-compile-autoload-bunfig: a mounted project's .env / bunfig.toml can
+# NOT steer the analysis (verified by scripts/binary-smoke.ts).
+FROM alpine:3.21
+
+# Bun's musl build is dynamically linked against libstdc++ (absent in the
+# alpine base); the glibc images need no equivalent (slim ships it).
+RUN apk add --no-cache libstdc++
+
+ARG TARGETARCH
+
+COPY dist/callis-linux-x64-musl /tmp/bin/callis-linux-x64-musl
+COPY dist/callis-linux-arm64-musl /tmp/bin/callis-linux-arm64-musl
+
+RUN set -eux; \
+    if [ "$TARGETARCH" = "amd64" ]; then BIN=callis-linux-x64-musl; \
+    elif [ "$TARGETARCH" = "arm64" ]; then BIN=callis-linux-arm64-musl; \
+    else echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1; fi; \
+    install -m 0755 /tmp/bin/$BIN /usr/local/bin/callis; \
+    rm -rf /tmp/bin; \
+    callis --version
+
+ENV XDG_CACHE_HOME=/var/cache/callis
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/callis"]
+CMD ["--help"]

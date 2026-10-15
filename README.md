@@ -132,6 +132,22 @@ docker run -v $(pwd):/workspace \
 The image carries only the prebuilt binary (models embedded); the mounted
 project is the default `--project`.
 
+Per-platform images (published on version tags; the `latest`/`main-<sha>`
+tags stay the multi-arch glibc default):
+
+| Image tag | Base | Binary |
+| --- | --- | --- |
+| `:<ver>-linux-x64` | debian:bookworm-slim | glibc x64 |
+| `:<ver>-linux-x64-baseline` | debian:bookworm-slim | glibc x64, AVX2-less CPUs |
+| `:<ver>-linux-x64-musl` | alpine:3.21 | musl x64 |
+| `:<ver>-linux-arm64` | debian:bookworm-slim | glibc arm64 |
+| `:<ver>-linux-arm64-musl` | alpine:3.21 | musl arm64 |
+
+darwin/windows binaries are not container-runnable (a linux container cannot
+exec Mach-O/PE) — use the npm packages or the release assets there. On
+alpine hosts running the musl binary directly (npm channel), `apk add
+libstdc++` is required (the image already carries it).
+
 ## Development gates
 
 ```sh

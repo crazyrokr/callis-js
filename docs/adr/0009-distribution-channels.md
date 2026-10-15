@@ -133,3 +133,22 @@ The post-v1 channels ship as tested artifacts, not folklore:
   GATED: without `APPLE_*` / `WINDOWS_PFX` the assets stay "experimental,
   unsigned" (the v1 label) and the jobs skip cleanly, which is also what
   keeps them runnable in unauthenticated CI emulation.
+- **Per-platform container images (M7d, user decision 2026-10-15):** the
+  distribution matrix mirrors into GHCR as one image per RUNNABLE linux
+  variant — the darwin/windows binaries are not container-executable (a
+  linux container cannot exec Mach-O/PE), so they stay npm-package /
+  release-asset channels only. Images: `:<ver>-linux-x64` and
+  `:<ver>-linux-x64-baseline` (debian:bookworm-slim; the latter for
+  AVX2-less CPUs, `--build-arg VARIANT=baseline`), `:<ver>-linux-arm64`
+  (same base), and `:<ver>-linux-x64-musl` / `:<ver>-linux-arm64-musl`
+  (alpine:3.21 — Bun's musl build dynamically links `libstdc++`, which
+  alpine does not ship, so the image `apk add`s it; the same applies to
+  the musl npm package on a bare alpine host). The M6 multi-arch glibc
+  default (`:latest`, `:main-<sha7>`, `:<ver>`) is preserved; per-platform
+  tags are published on version tags only. `docker.yml` smokes each amd64
+  image against the EXACT artifact published (pull-then-run when pushing,
+  loaded-locally when not — `workflow_dispatch` with `push: false` is the
+  path local `act` runs take); the arm64 images build under qemu but are
+  not executed in CI (their binaries are covered by the build-time magic-
+  byte contract). `.dockerignore` keeps the build context to the five
+  linux binaries.
