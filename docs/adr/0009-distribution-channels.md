@@ -82,3 +82,28 @@ The channels above are implemented and CI-gated:
   at run time, so a fresh checkout is enough to reproduce every demo.
 - **Measured (M6, Bun 1.4.2):** linux-x64 binary 85 MB with sourcemap +
   embedded models; `--version` cold start ~121 ms end-to-end.
+
+## M7 implementation notes (2026-10-15)
+
+The post-v1 channels ship as tested artifacts, not folklore:
+
+- **GitHub Action (M7e):** `action/` — `action.yml` + a dependency-free
+  node20 runner (`dist/index.cjs`; `.cjs` on purpose: unambiguously
+  CommonJS no matter what `"type"` the consumer repo declares). The
+  action downloads the release asset for the runner (OS/arch + a musl
+  loader probe + an AVX2 CPU probe select the `-musl` / `-baseline`
+  assets), verifies the REPO-PINNED sha256 digest (the hard gate — never
+  the release's own `SHA256SUMS`, ADR 0017), optionally cosign-verifies
+  when cosign is on PATH, runs callis, passes the exit code through, and
+  cross-checks an optional repo-pinned `expected-reachable.txt` (a stale
+  pin fails the step with exit 2, independent of the callis exit code).
+  The runner is tested in `test/action.test.ts`: local-binary, digest
+  mismatch, matching / stale / ABSENT pins, clean exit 0, download over
+  local HTTP (a real node server — the Bun server implementation is not
+  a compatible fetch target), and the full asset-selection matrix.
+- **Turborepo / Nx recipes (M7e/M8):** `docs/build-tools.md` — the task
+  declares the input-key components of plan §6 as inputs (application
+  sources, every lockfile variant, SBOM, OSV pin, mappings, flags) and
+  the report trio as outputs; until M8 the inputs are declared
+  explicitly, from M8 the canonical hash is `callis --print-cache-key`
+  (+ `--hash-installed` for in-place patch visibility).

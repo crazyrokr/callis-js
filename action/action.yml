@@ -1,0 +1,89 @@
+name: callis
+description: >
+  Answers whether the vulnerabilities in an SBOM are reachable from
+  application code: downloads the pinned callis release binary, verifies
+  the REPO-PINNED SHA256 digest (and optionally the cosign signature),
+  runs the analysis, and fails the step on REACHABLE findings or a stale
+  expected-reachable pin.
+author: callis
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  version:
+    description: The callis release version to run (e.g. 0.1.0).
+    required: true
+  sha256:
+    description: >
+      The REPO-PINNED SHA256 digest of the binary for this platform.
+      Never fetch it from the release: the release's own SHA256SUMS is
+      not independent evidence (ADR 0017). Pin the digest in your repo
+      (Renovate bumps it with the version).
+    required: true
+  cosign-identity:
+    description: >
+      Optional. The certificate identity to verify with cosign
+      (e.g. <owner>+callis-js@github.com). cosign must be on PATH in a
+      preceding step; without it the check is skipped with a warning
+      (the digest check still gates the run).
+    required: false
+  cosign-issuer:
+    description: The certificate OIDC issuer.
+    required: false
+    default: "https://token.actions.githubusercontent.com"
+  release-repo:
+    description: The GitHub repository that publishes the callis releases.
+    required: false
+    default: callis-js/callis-js
+  release-url:
+    description: Optional. A full download URL override (mirrors, air-gapped CI).
+    required: false
+  binary:
+    description: >
+      Optional. A local callis binary to run instead of downloading
+      (air-gapped CI). The digest is verified against it anyway.
+    required: false
+  project:
+    description: The project directory to analyze.
+    required: false
+    default: .
+  sbom:
+    description: The SBOM file (CycloneDX 1.4-1.6 / SPDX 2.x).
+    required: true
+  osv-dir:
+    description: The local OSV npm snapshot directory.
+    required: true
+  mappings:
+    description: Optional vuln-mappings.json (method-level precision).
+    required: false
+  output:
+    description: The report base name (writes <base>.json, <base>.junit.xml, <base>.sarif).
+    required: false
+    default: callis-report
+  formats:
+    description: Comma-separated report formats.
+    required: false
+    default: json,junitxml,sarif
+  extra-args:
+    description: Optional extra callis flags (space separated, e.g. "--cha --include-dev").
+    required: false
+  expected-reachable:
+    description: >
+      Optional. A repo-pinned expected-reachable.txt (lines
+      "<VERDICT> <id>" or "ABSENT <id>") cross-checked against the
+      report — a living integration test of your own dependency state.
+      A stale pin fails the step with exit 2.
+    required: false
+
+outputs:
+  exit-code:
+    description: The callis exit code (0 clean, 1 REACHABLE/MAL/OPAQUE, 2 usage/config, 3 analysis failure).
+  report-json:
+    description: The path of the JSON report (upload it as an artifact on failure).
+
+runs:
+  using: node20
+  # .cjs on purpose: unambiguously CommonJS no matter what "type" the
+  # consumer repo's package.json declares.
+  main: dist/index.cjs
