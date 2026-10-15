@@ -75,6 +75,9 @@ export function computeLimitations(input: {
   nativeOpaque: number;
   overApproximateDynamic: boolean;
   cha: boolean;
+  /** M7a: --pointer-analysis was active (stats carry the refinement counts). */
+  pointer?: boolean;
+  pointerStats?: { sites: number; added: number; pruned: number } | undefined;
 }): string[] {
   const out: string[] = [];
   if (input.dynamicMarkers > 0) out.push("dynamic-constructs: unresolved dynamic calls recorded but not resolved");
@@ -86,6 +89,13 @@ export function computeLimitations(input: {
   if (input.cha) out.push("cha: member calls resolve to every loaded function of the same name");
   if (input.overApproximateDynamic)
     out.push("over-approximate-dynamic: unknown-key computed calls resolve to instantiated-class methods");
+  if (input.pointer === true) {
+    const s = input.pointerStats;
+    out.push(
+      `pointer-analysis: inclusion-based receiver typing refined dispatch at ${s?.sites ?? 0} site(s)` +
+        ` (added ${s?.added ?? 0}, pruned ${s?.pruned ?? 0} edges; unknown receivers keep the default edges)`,
+    );
+  }
   return out;
 }
 

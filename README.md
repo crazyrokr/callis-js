@@ -48,7 +48,7 @@ disabled at build time — `scripts/binary-smoke.ts` proves both).
 | --- | --- |
 | linux-x64 (glibc), linux-arm64 (glibc) | supported |
 | linux-x64-musl, linux-arm64-musl, linux-x64-baseline (no AVX2) | supported |
-| darwin-x64, darwin-arm64, windows-x64 | experimental, **unsigned** until M7d |
+| darwin-x64, darwin-arm64, windows-x64 | experimental; signed/notarized in CI when the repo's signing secrets are configured (npm section below) |
 
 ## Exit codes & reports
 
@@ -61,6 +61,24 @@ precedence winner. The SARIF carries `codeFlows` for every finding with a
 call path: one physical source location (file + line) per hop, so
 code-scanning UIs show the real call chain from the entry point to the
 vulnerable function (the SBOM file stays the result anchor).
+
+## Precision modes
+
+The default build is the sound baseline: receiver dispatch uses resolved
+reachability (RTA) over text-merged receiver names. Two opt-in refinements
+exist, mutually exclusive (using both is a usage error, exit 2):
+
+- `--cha` — coarser: member calls resolve to every loaded function of the
+  same name (the `cha:` limitation is reported).
+- `--pointer-analysis` — finer: inclusion-based, object-sensitive receiver
+  typing (Andersen-style). A receiver's type set is accumulated per
+  function (`new C`, copies, call results, call-site arguments) and dispatch
+  follows the supertype closure, so an inherited method is reached through a
+  subclass instance and cross-function identifier merges are pruned. A
+  receiver with no type facts keeps the default edges verbatim — the mode
+  never removes an edge the default build has. The report carries
+  `stats.pointer = {sites, added, pruned}` and a `pointer-analysis:`
+  limitation with the same counts (see ADR 0003, "M7a").
 
 ## Releasing a version
 

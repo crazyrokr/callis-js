@@ -113,6 +113,7 @@ function builderName(opts: EngineOptions): string {
   let name = "demand-0cfa";
   if (opts.cha) name += "+cha";
   if (opts.overApproximateDynamic) name += "+over-approx";
+  if (opts.pointerAnalysis) name += "+pointer";
   return name;
 }
 
@@ -256,11 +257,12 @@ async function buildGraphOrNull(opts: EngineOptions, model: ProjectModel, consol
     linker: makeLinker(model),
     entryPoints: detection.entries,
     models: catalog.models,
-    ...(opts.cha || opts.overApproximateDynamic
+    ...(opts.cha || opts.overApproximateDynamic || opts.pointerAnalysis
       ? {
           options: {
             ...(opts.cha ? { cha: true } : {}),
             ...(opts.overApproximateDynamic ? { overApproximateDynamic: true } : {}),
+            ...(opts.pointerAnalysis ? { pointerAnalysis: true } : {}),
           },
         }
       : {}),
@@ -720,6 +722,12 @@ export async function runAnalysis(optsIn: EngineOptions, console: Console = DEFA
     nativeOpaque: exposure.nativeOpaque,
     overApproximateDynamic: opts.overApproximateDynamic,
     cha: opts.cha,
+    ...(opts.pointerAnalysis
+      ? {
+          pointer: true,
+          pointerStats: graph?.stats.pointer,
+        }
+      : {}),
   });
 
   const meta = baseMeta(opts.sbomOnly);

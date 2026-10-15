@@ -158,6 +158,37 @@ describe("computeLimitations", () => {
     });
     expect(l).not.toContain("native-opacity: .node/WASM boundaries are not visible to the analysis");
   });
+
+  test("given an active --pointer-analysis run with refinement stats, when computed, then the pointer limitation carries the site/edge counts", () => {
+    const l = computeLimitations({
+      dynamicMarkers: 0,
+      importTimeReachable: false,
+      callbackRegisteredUsed: false,
+      nativeOpaque: 0,
+      overApproximateDynamic: false,
+      cha: false,
+      pointer: true,
+      pointerStats: { sites: 4, added: 2, pruned: 1 },
+    });
+    expect(l).toContain(
+      "pointer-analysis: inclusion-based receiver typing refined dispatch at 4 site(s) (added 2, pruned 1 edges; unknown receivers keep the default edges)",
+    );
+  });
+
+  test("given an active --pointer-analysis run whose stats are absent (false-positive guard), when computed, then the limitation reports zero counts", () => {
+    const l = computeLimitations({
+      dynamicMarkers: 0,
+      importTimeReachable: false,
+      callbackRegisteredUsed: false,
+      nativeOpaque: 0,
+      overApproximateDynamic: false,
+      cha: false,
+      pointer: true,
+    });
+    expect(l).toContain(
+      "pointer-analysis: inclusion-based receiver typing refined dispatch at 0 site(s) (added 0, pruned 0 edges; unknown receivers keep the default edges)",
+    );
+  });
 });
 
 describe("sortFindings", () => {

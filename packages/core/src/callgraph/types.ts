@@ -64,6 +64,13 @@ export interface GraphStats {
   dynamicMarkers: number;
   /** Markers not attributable to any function (exposure.dynamicUnscoped, 5.6). */
   unscopedMarkers: number;
+  /**
+   * M7a pointer-analysis refinement (present only with --pointer-analysis):
+   * call sites whose receiver typing replaced the default RTA, edges the
+   * refinement ADDED (inherited/union dispatch the default missed), and
+   * edges it PRUNED (default targets outside the receiver's type closure).
+   */
+  pointer?: { sites: number; added: number; pruned: number };
 }
 
 /** The finished graph: plain data, ready for verdicts (M5) or `--dry-run-graph`. */
@@ -95,6 +102,12 @@ export interface BuildOptions {
   cha?: boolean;
   /** Computed calls with unknown keys: name-based fallback (plan 5.5). */
   overApproximateDynamic?: boolean;
+  /**
+   * `--pointer-analysis` (M7a): inclusion-based receiver typing with
+   * subtype-closure dispatch. Mutually exclusive with `cha` at the engine
+   * level (two different precision modes).
+   */
+  pointerAnalysis?: boolean;
 }
 
 /** Resolves an import specifier to a target file (the M2 resolver adapter). */
