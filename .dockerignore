@@ -1,0 +1,10 @@
+# The build context is the whole repo by default; only the five linux
+# binaries enter the images (the rest is ~1 GB of sources/fixtures).
+*
+!dist
+dist/*
+!dist/callis-linux-x64
+!dist/callis-linux-arm64
+!dist/callis-linux-x64-musl
+!dist/callis-linux-arm64-musl
+!dist/callis-linux-x64-baseline
