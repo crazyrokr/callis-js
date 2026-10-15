@@ -1,0 +1,12 @@
+{
+  "name": "@callis/cli-darwin-arm64",
+  "version": "0.1.0",
+  "description": "callis binary for darwin arm64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["callis-darwin-arm64"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

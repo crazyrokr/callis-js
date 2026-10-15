@@ -1,0 +1,82 @@
+# callis-js npm publish (M7d, ADR 0009): the per-platform npm packages —
+# the esbuild/Biome pattern: @callis/cli (a tiny JS shim) + eight
+# @callis/cli-<platform> packages (os/cpu/libc fields; the binary staged
+# in at publish time).
+#
+# The platform packages are published FIRST (the shim's
+# optionalDependencies reference them), the shim last. Publish only when
+# NPM_TOKEN is set; staging always runs (it is the testable contract).
+name: npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - name: Build all targets
+        run: bun run build
+      # SHA256SUMS entries are relative to the repo root (dist/...).
+      - name: Verify SHA256SUMS
+        run: sha256sum -c dist/SHA256SUMS
+      - name: Stage the platform packages
+        run: |
+          set -e
+          stage() {
+            pkg=$1
+            bin=$2
+            cp "dist/${bin}" "npm/${pkg}/${bin}"
+            chmod 0755 "npm/${pkg}/${bin}"
+          }
+          stage cli-linux-x64 callis-linux-x64
+          stage cli-linux-x64-musl callis-linux-x64-musl
+          stage cli-linux-x64-baseline callis-linux-x64-baseline
+          stage cli-linux-arm64 callis-linux-arm64
+          stage cli-linux-arm64-musl callis-linux-arm64-musl
+          stage cli-darwin-x64 callis-darwin-x64
+          stage cli-darwin-arm64 callis-darwin-arm64
+          # Windows: the asset ships without the extension; the npm
+          # package carries it WITH .exe (CreateProcess needs it).
+          cp dist/callis-windows-x64 npm/cli-windows-x64/callis-windows-x64.exe
+          chmod 0755 npm/cli-windows-x64/callis-windows-x64.exe
+          echo "staged:"
+          ls -l npm/*/callis-* 2>/dev/null || ls -l npm/*/
+      # The runner's own node/npm (no setup step: the publish needs nothing
+      # but the npm CLI, and the image/runner always ship one).
+      - name: Show toolchain
+        run: node --version && npm --version
+      - name: Publish (platform packages first, the shim last)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN not set: staging only — nothing published"
+            exit 0
+          fi
+          set -e
+          for d in npm/cli-*; do
+            if [ "$d" = "npm/cli" ]; then continue; fi
+            (cd "$d" && npm publish --access public)
+          done
+          (cd npm/cli && npm publish --access public)
+          echo "published @callis/cli + the 8 platform packages"
+      - name: Smoke the published shim (when a token was set)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then exit 0; fi
+          tmp=$(mktemp -d)
+          (cd "$tmp" && npm init -y >/dev/null && npm install --no-save @callis/cli && ./node_modules/.bin/callis --version)
+          rm -rf "$tmp"

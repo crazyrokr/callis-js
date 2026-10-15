@@ -107,3 +107,29 @@ The post-v1 channels ship as tested artifacts, not folklore:
   the report trio as outputs; until M8 the inputs are declared
   explicitly, from M8 the canonical hash is `callis --print-cache-key`
   (+ `--hash-installed` for in-place patch visibility).
+- **Per-platform npm packages (M7d):** `npm/` — the esbuild/Biome
+  pattern: `@callis/cli` is a dependency-free shim (`bin/callis.cjs`)
+  with `optionalDependencies` on the eight `@callis/cli-<platform>`
+  packages; each platform package carries `os`/`cpu` (and `libc`, which
+  pnpm and Bun honor — npm ignores it, so on npm both glibc and musl
+  packages install and the SHIM decides at run time from the same two
+  host probes as the Action: musl loader present → the `-musl` asset;
+  x64 without the `AVX2` flag → the `-baseline` asset when installed).
+  The binary is staged into the platform packages at publish time
+  (`npm-publish.yml`; the windows asset ships as `.exe` there because
+  CreateProcess needs the extension). The selection logic is the
+  install-matrix test (`test/npm-shim.test.ts`: full platform matrix,
+  no-AVX2 with/without baseline, musl-never-gets-glibc-baseline, missing
+  package/file diagnostics, exec passthrough, the real built binary
+  end-to-end). The registry side of the matrix (installers honoring
+  os/cpu/libc, `--omit=optional`, cached installs) is covered by the
+  publish workflow, not the shim.
+- **macOS notarization + Windows Authenticode (M7d):** new work (the JVM
+  tool ships linux-only unsigned). `release.yml` gains `sign-darwin`
+  (macos runner: build the darwin targets, Developer ID codesign with
+  hardening (`--options runtime`), notarytool submit/staple, replace the
+  release assets) and `sign-windows` (signtool SHA256 + Digicert
+  timestamp, `signtool verify /pa`, replace the asset) — both secret
+  GATED: without `APPLE_*` / `WINDOWS_PFX` the assets stay "experimental,
+  unsigned" (the v1 label) and the jobs skip cleanly, which is also what
+  keeps them runnable in unauthenticated CI emulation.

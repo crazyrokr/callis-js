@@ -18,6 +18,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync, renameSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -94,13 +95,63 @@ export function hostFamily(): TargetFamily | null {
   return null;
 }
 
-export function isHostTarget(t: Target): boolean {
-  const host = hostFamily();
-  if (host === null) return false;
-  if (t.family !== host) return false;
-  if (host === "elf") return t.suffix.startsWith("linux-");
-  if (host === "macho") return t.suffix.startsWith("darwin-");
-  return t.suffix.startsWith("windows-");
+/** Arch the target runs on (musl/baseline variants keep the base arch). */
+export function targetArch(t: Target): "x64" | "arm64" {
+  return t.suffix.includes("arm64") ? "arm64" : "x64";
+}
+
+// Loader probes — the same musl list the npm shim uses
+// (npm/cli/bin/callis.cjs). A musl ELF names a musl interpreter and a glibc
+// ELF a glibc one; on a host missing that loader posix_spawn fails
+// (ENOENT) and Bun's spawnSync reports the failure with NULL streams.
+const MUSL_LOADERS = [
+  "/lib64/ld-musl-x86_64.so.3",
+  "/lib/ld-musl-x86_64.so.7",
+  "/lib64/ld-musl-aarch64.so.1",
+  "/lib/ld-musl-aarch64.so.1",
+];
+const GLIBC_LOADERS = [
+  "/lib64/ld-linux-x86-64.so.2",
+  "/lib/ld-linux-x86-64.so.2",
+  "/lib64/ld-linux-aarch64.so.1",
+  "/lib/ld-linux-aarch64.so.1",
+];
+
+export interface HostProbe {
+  family: TargetFamily | null;
+  arch: string;
+  musl: boolean;
+  glibc: boolean;
+}
+
+export function readHostProbe(): HostProbe {
+  return {
+    family: hostFamily(),
+    arch: process.arch,
+    musl: MUSL_LOADERS.some((p) => existsSync(p)),
+    glibc: GLIBC_LOADERS.some((p) => existsSync(p)),
+  };
+}
+
+/**
+ * A target is smoke-executable only when family AND arch AND libc match the
+ * host: an arm64 ELF on an x64 host is still ELF but posix_spawn rejects it
+ * (ENOEXEC), and a musl ELF on a glibc-only host names an absent interpreter
+ * (ENOENT). Both spawn failures surface as NULL streams in Bun's spawnSync.
+ */
+export function isHostTarget(t: Target, probe: HostProbe = readHostProbe()): boolean {
+  if (probe.family === null || t.family !== probe.family) return false;
+  const archOk = targetArch(t) === probe.arch;
+  if (probe.family === "elf") {
+    if (!t.suffix.startsWith("linux-") || !archOk) return false;
+    return t.suffix.includes("-musl") ? probe.musl : probe.glibc;
+  }
+  if (probe.family === "macho") {
+    if (!t.suffix.startsWith("darwin-")) return false;
+    // An x64 Mach-O runs under Rosetta on an arm64 Mac; the reverse never.
+    return targetArch(t) === "arm64" ? archOk : true;
+  }
+  return t.suffix.startsWith("windows-") && archOk;
 }
 
 function buildOne(t: Target, dist: string): string {
@@ -119,7 +170,18 @@ function buildOne(t: Target, dist: string): string {
   for (const asset of MODEL_ASSETS) args.push("--asset", asset);
   args.push("--outfile", outfile);
   const r = spawnSync("bun", args, { stdio: ["ignore", "pipe", "pipe"] });
-  if (r.status !== 0) throw new Error(`bun build failed for ${t.suffix}: ${r.stderr.toString()}`);
+  if (r.status === null || r.error !== undefined) {
+    // Bun's spawnSync leaves the streams null when it cannot spawn (M6
+    // gotcha): a clear diagnostic beats a TypeError.
+    throw new Error(`bun build could not be spawned for ${t.suffix}: ${r.error?.message ?? "unknown spawn error"}`);
+  }
+  if (r.status !== 0) throw new Error(`bun build failed for ${t.suffix}: ${r.stderr?.toString() ?? "(no output)"}`);
+  // Bun names PE output with a .exe suffix; the release assets and the npm
+  // stage carry the bare name, so normalize after the build.
+  if (t.family === "pe") {
+    const exe = `${outfile}.exe`;
+    if (existsSync(exe)) renameSync(exe, outfile);
+  }
   return outfile;
 }
 
@@ -152,8 +214,16 @@ async function main(): Promise<void> {
     if (isHostTarget(t)) {
       const v0 = performance.now();
       const r = spawnSync(outfile, ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
-      versionMs = `${Math.round(performance.now() - v0)} (exit ${r.status}, ${r.stdout.toString().trim()})`;
-      if (r.status !== 0) throw new Error(`${outfile}: --version exited ${r.status}: ${r.stderr.toString()}`);
+      if (r.status === null || r.error !== undefined) {
+        // A binary that cannot be SPAWNED (EACCES, bad interpreter, container
+        // policy) fails here with the reason — null streams are a Bun
+        // spawnSync trap (M6 gotcha), never a TypeError.
+        throw new Error(`${outfile}: --version could not be spawned: ${r.error?.message ?? "unknown spawn error"}`);
+      }
+      const out = r.stdout?.toString().trim() ?? "";
+      versionMs = `${Math.round(performance.now() - v0)} (exit ${r.status}, ${out})`;
+      if (r.status !== 0)
+        throw new Error(`${outfile}: --version exited ${r.status}: ${r.stderr?.toString().trim() ?? "(no output)"}`);
     }
     built.push(outfile);
     table.push(
