@@ -1,0 +1,24 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    {
+      "type": "library",
+      "name": "devpkg",
+      "version": "1.0.0",
+      "purl": "pkg:npm/devpkg@1.0.0",
+      "scope": "excluded"
+    },
+    {
+      "type": "library",
+      "name": "devutil",
+      "version": "1.0.0",
+      "purl": "pkg:npm/devutil@1.0.0",
+      "scope": "excluded"
+    }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/devpkg@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/devutil@1.0.0", "dependsOn": [] }
+  ]
+}

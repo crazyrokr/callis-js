@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "models": [
+    { "name": "setTimeout", "module": "timers", "callbackArg": 0, "kind": "callback" },
+    { "name": "setInterval", "module": "timers", "callbackArg": 0, "kind": "callback" },
+    { "name": "setImmediate", "module": "timers", "callbackArg": 0, "kind": "callback" },
+    { "name": "queueMicrotask", "module": "global", "callbackArg": 0, "kind": "callback" },
+    { "name": "nextTick", "module": "process", "callbackArg": 0, "kind": "callback" },
+    { "name": "then", "method": true, "callbackArgs": [0, 1], "kind": "callback" },
+    { "name": "catch", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "finally", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "map", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "forEach", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "reduce", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "filter", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "find", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "some", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "every", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "on", "method": true, "callbackArgs": [1], "kind": "emitter", "eventArg": 0 },
+    { "name": "once", "method": true, "callbackArgs": [1], "kind": "emitter", "eventArg": 0 },
+    { "name": "emit", "method": true, "callbackArgs": [], "kind": "emitter-emit", "eventArg": 0 },
+    { "name": "call", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "apply", "method": true, "callbackArgs": [0], "kind": "callback" },
+    { "name": "bind", "method": true, "callbackArgs": [0], "kind": "alias" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    { "type": "library", "name": "vulnpkg", "version": "1.0.0", "purl": "pkg:npm/vulnpkg@1.0.0" },
+    { "type": "library", "name": "ghost", "version": "1.0.0", "purl": "pkg:npm/ghost@1.0.0" },
+    { "type": "library", "name": "benign", "version": "1.0.0", "purl": "pkg:npm/benign@1.0.0" }
+  ],
+  "dependencies": [
+    { "ref": "pkg:npm/vulnpkg@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/ghost@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/benign@1.0.0", "dependsOn": [] },
+    {
+      "ref": "pkg:npm/partial-resolution-demo@1.0.0",
+      "dependsOn": ["pkg:npm/vulnpkg@1.0.0", "pkg:npm/benign@1.0.0"]
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# The SBOM (stale) omits vulnpkg, which the app loads and calls. Default:
+# no finding, the instance is listed in completeness.unlistedInstalled,
+# analysisStatus PARTIAL. Exit 0.

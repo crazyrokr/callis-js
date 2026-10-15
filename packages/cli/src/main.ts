@@ -32,13 +32,13 @@ Options (JVM-compatible flag vocabulary; see implementation-plan section 6):
   --call-evidence=any|direct
   --include-dev              Analyze dev-only components
   --include-tests            Analyze test files
-  --malware=fail|warn|ignore Policy for MAL-* records (default: fail)
+  --malware=fail|warn|ignore Policy for MAL-* records (default: warn)
   --fail-on-applicable       sbom-only: fail on any applicable advisory
   --strict-sources           Any non-RESOLVED component => exit 3
   --require-complete         analysisStatus PARTIAL => exit 3
   --allow-empty-sbom         Opt out of the empty-SBOM guard
   --match-installed          Also match installed instances not in the SBOM
-  --opaque-native=fail|warn|ignore
+  --opaque-native=fail|warn|ignore (default: warn)
   --sbom-only                SBOM x OSV only, no call graph
   --over-approximate-dynamic Name-based fallback for computed calls
   --cache-dir=<dir>          IR/OSV-index cache (default: $XDG_CACHE_HOME/callis)
@@ -55,8 +55,14 @@ function csv(v: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-function oneOf(v: string | undefined, allowed: string[], flag: string): string {
-  if (v === undefined) return allowed[0] as string;
+/**
+ * Flag value from an allowed set. `def` (default: the first allowed value)
+ * is the value when the flag is absent — the first allowed value is not
+ * always the right default: the fail-closed values of --malware and
+ * --opaque-native default to warn; only an explicit opt-in fails the run.
+ */
+function oneOf(v: string | undefined, allowed: string[], flag: string, def = allowed[0] as string): string {
+  if (v === undefined) return def;
   if (!allowed.includes(v)) throw new UsageError(`invalid value for ${flag}: ${v} (allowed: ${allowed.join("|")})`);
   return v;
 }
@@ -77,19 +83,20 @@ export function optionsOf(values: Record<string, unknown>): EngineOptions {
     callEvidence: oneOf(str("call-evidence"), ["any", "direct"], "--call-evidence") as "any" | "direct",
     includeDev: bool("include-dev"),
     includeTests: bool("include-tests"),
-    malware: oneOf(str("malware"), ["fail", "warn", "ignore"], "--malware") as "fail" | "warn" | "ignore",
+    malware: oneOf(str("malware"), ["fail", "warn", "ignore"], "--malware", "warn") as "fail" | "warn" | "ignore",
     failOnApplicable: bool("fail-on-applicable"),
     strictSources: bool("strict-sources"),
     requireComplete: bool("require-complete"),
     allowEmptySbom: bool("allow-empty-sbom"),
     matchInstalled: bool("match-installed"),
-    opaqueNative: oneOf(str("opaque-native"), ["fail", "warn", "ignore"], "--opaque-native") as
+    opaqueNative: oneOf(str("opaque-native"), ["fail", "warn", "ignore"], "--opaque-native", "warn") as
       | "fail"
       | "warn"
       | "ignore",
     sbomOnly: bool("sbom-only"),
     overApproximateDynamic: bool("over-approximate-dynamic"),
-    cacheDir: str("cache-dir") ?? `${process.env.XDG_CACHE_HOME ?? `${process.env.HOME}/.cache`}/callis`,
+    // `||` (not `??`) so an empty XDG_CACHE_HOME falls through to the HOME default.
+    cacheDir: str("cache-dir") ?? `${process.env.XDG_CACHE_HOME || `${process.env.HOME}/.cache`}/callis`,
     formats: csv(str("format")).length > 0 ? csv(str("format")) : ["json", "junitxml"],
     output: str("output") ?? "callis-report",
     verbose: bool("verbose"),

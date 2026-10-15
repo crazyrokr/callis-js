@@ -1,0 +1,7 @@
+{
+  "name": "version-drift-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "dependencies": { "drifted": "1.2.0" }
+}

@@ -1,0 +1,2 @@
+exposure: 1 dynamic-risk, 0 no-source, 0 native-opaque, 0 unscoped, 0 loaded-not-called
+notice: 1 UNREACHABLE finding(s) of installed packages could plausibly be loaded by a dynamic construct in application code (dynamic require/import/eval)

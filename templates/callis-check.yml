@@ -1,0 +1,144 @@
+# callis-check — consumer template (plan §7, ADR 0009/0017).
+#
+# Drop this into .github/workflows/ of a repo that has:
+#   sbom.json            — CycloneDX 1.4-1.6 or SPDX 2.x
+#   osv/                 — a local OSV npm snapshot directory
+#   expected-reachable.txt — the verdicts this repo expects (REACHABLE/
+#                            UNREACHABLE/ABSENT lines, one canonical id each)
+#   callis-pin.json      — { "version": "...", "sha256": "..." } — the pin
+#
+# Security contract (ADR 0017, independent verification):
+#   1. the binary is downloaded for the pinned version,
+#   2. it is checked against the digest PINNED IN THIS REPO — never against
+#      the release's own SHA256SUMS (a checksum from the same source is not
+#      independent evidence),
+#   3. cosign verify runs against the documented certificate identity
+#      (<REPO-OWNER>+callis-js@github.com) + the GitHub Actions OIDC issuer,
+#   4. only then is the binary executed.
+#
+# Renovate keeps callis-pin.json current: when a new callis-js release lands,
+# Renovate opens a PR bumping "version" AND "sha256" (the sha256 value comes
+# from the release the pipeline itself publishes; until the PR is merged the
+# old pin keeps working).
+#
+# Replace <REPO-OWNER> and <REPO> with the callis-js repository owner/name
+# you consume (for the canonical project: the callis-js org/repo pair).
+
+name: callis-check
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly: the SBOM/snapshot drift check is the point of a scheduled run.
+    - cron: "17 6 * * 1"
+  push:
+    paths:
+      - "sbom.json"
+      - "osv/**"
+      - "expected-reachable.txt"
+      - "callis-pin.json"
+      - ".github/workflows/callis-check.yml"
+
+permissions:
+  contents: read
+  # cosign verify is read-only; id-token is needed only if you ALSO want to
+  # sign your own SBOM pipeline outputs.
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      CALLIS_REPO: "<REPO-OWNER>/callis-js"
+      # Read from the pin at runtime so Renovate PRs are the ONLY edit point.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load the repo pin
+        id: pin
+        run: |
+          VERSION=$(jq -r '.version' callis-pin.json)
+          SHA256=$(jq -r '.sha256' callis-pin.json)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the pinned binary
+        run: |
+          curl -fsSL \
+            -o callis \
+            "https://github.com/${CALLIS_REPO}/releases/download/v${{ steps.pin.outputs.version }}/callis-linux-x64"
+
+      # 1) REPO-PINNED digest — the independent check (ADR 0017).
+      - name: Verify against the repo-pinned digest
+        run: |
+          echo "${{ steps.pin.outputs.sha256 }}  callis" | sha256sum -c -
+
+      # 2) cosign — signature + identity (keyless, GitHub OIDC).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          version: "v2.5.3"
+      - name: cosign verify (documented certificate identity)
+        run: |
+          cosign verify callis \
+            --certificate-identity "<REPO-OWNER>+callis-js@github.com" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+      - name: Run callis
+        run: |
+          install -m 0755 callis /usr/local/bin/callis
+          callis \
+            --project . \
+            --sbom sbom.json \
+            --osv-dir osv \
+            --format json \
+            --output /tmp/callis-report
+
+      # 3) Cross-check the verdicts against the repo-pinned expectations.
+      #    Any UNEXPECTED finding (a new REACHABLE, a surprise verdict) fails
+      #    the check — the report is uploaded for inspection.
+      - name: Cross-check expected-reachable.txt
+        run: |
+          jq -r '.findings[] | [.id, .verdict] | @tsv' /tmp/callis-report.json | sort > /tmp/actual.tsv
+          python3 - <<'EOF'
+          from pathlib import Path
+          import sys
+
+          actual = {}
+          for line in Path("/tmp/actual.tsv").read_text().splitlines():
+              if not line.strip():
+                  continue
+              ident, verdict = line.split("\t")
+              actual[ident] = verdict
+          expected = {}
+          for line in Path("expected-reachable.txt").read_text().splitlines():
+              line = line.strip()
+              if not line or line.startswith("#"):
+                  continue
+              op, ident = line.split(None, 1)
+              assert op in ("REACHABLE", "UNREACHABLE", "ABSENT"), f"bad expected line: {line}"
+              expected[ident] = op
+          failed = False
+          for ident, op in expected.items():
+              got = actual.get(ident, "no finding")
+              if op == "REACHABLE" and got != "REACHABLE":
+                  print(f"FAIL: expected REACHABLE {ident}, got {got}")
+                  failed = True
+              if op == "UNREACHABLE" and got != "UNREACHABLE":
+                  print(f"FAIL: expected UNREACHABLE {ident}, got {got}")
+                  failed = True
+              if op == "ABSENT" and got != "no finding":
+                  print(f"FAIL: expected no finding for {ident}, got {got}")
+                  failed = True
+          for ident, verdict in actual.items():
+              if ident not in expected:
+                  print(f"FAIL: unexpected finding {ident} ({verdict}) — add it to expected-reachable.txt")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          EOF
+
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: callis-report
+          path: /tmp/callis-report.json

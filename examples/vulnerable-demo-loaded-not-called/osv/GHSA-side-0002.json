@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-side-0002",
+  "summary": "Fixture advisory for sidefx",
+  "affected": [
+    {
+      "package": { "name": "sidefx", "ecosystem": "npm", "purl": "pkg:npm/sidefx" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

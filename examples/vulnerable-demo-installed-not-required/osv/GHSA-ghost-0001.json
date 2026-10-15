@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-ghost-0001",
+  "summary": "Fixture advisory for ghostutil",
+  "affected": [
+    {
+      "package": { "name": "ghostutil", "ecosystem": "npm", "purl": "pkg:npm/ghostutil" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

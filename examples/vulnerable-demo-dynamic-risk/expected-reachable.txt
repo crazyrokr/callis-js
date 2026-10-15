@@ -1,0 +1,2 @@
+# dynpkg is never statically imported; only a computed require could load it.
+UNREACHABLE GHSA-dyn-0003

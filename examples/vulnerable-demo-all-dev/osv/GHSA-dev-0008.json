@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-dev-0008",
+  "summary": "Fixture advisory for devpkg",
+  "affected": [
+    {
+      "package": { "name": "devpkg", "ecosystem": "npm", "purl": "pkg:npm/devpkg" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

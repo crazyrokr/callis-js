@@ -8,7 +8,7 @@
 // the SBOM.
 
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { type OsRecord, type ReadRecordFn, defaultReadRecord, packageIdentity, readRecordFile } from "./record.js";
 
 export interface OsvIndex {
@@ -117,8 +117,11 @@ export function filesForAliases(index: OsvIndex, aliases: string[]): string[] {
 }
 
 export async function listRecordFiles(osvDir: string): Promise<string[]> {
+  // Normalize first (same contract as the pin): redundant slashes in the
+  // argument must not change the relative file names.
+  const root = resolve(osvDir);
   const out: string[] = [];
-  const queue: string[] = [osvDir];
+  const queue: string[] = [root];
   while (queue.length > 0) {
     const current = queue.pop() as string;
     const entries = await readdir(current, { withFileTypes: true });
@@ -126,7 +129,7 @@ export async function listRecordFiles(osvDir: string): Promise<string[]> {
       const full = join(current, entry.name);
       if (entry.isDirectory()) queue.push(full);
       else if (entry.isFile() && entry.name.endsWith(".json")) {
-        out.push(full.startsWith(`${osvDir}/`) ? full.slice(osvDir.length + 1) : full);
+        out.push(full.startsWith(`${root}/`) ? full.slice(root.length + 1) : full);
       }
     }
   }

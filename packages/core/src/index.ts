@@ -4,7 +4,11 @@
 // added per milestone (M1 data layer, M2 project/resolver, M3 IR/frontend,
 // M4 call graph, M5 verdict/report/engine/policy).
 
-export const TOOL_VERSION = "0.1.0";
+// The compiled binary inlines the release version at build time
+// (scripts/build.ts passes --define BUILD_VERSION='"<version>"'); a source
+// checkout has no such global, so the release literal is the fallback.
+declare const BUILD_VERSION: string | undefined;
+export const TOOL_VERSION: string = typeof BUILD_VERSION === "string" ? BUILD_VERSION : "0.1.0";
 // Bumped to 2 in M4: ModuleIR gained classBases (super edges, plan 5.5) —
 // older cache entries lack the field and must not be reused.
 export const IR_VERSION = "2";

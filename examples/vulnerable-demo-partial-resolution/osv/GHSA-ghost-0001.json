@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-ghost-0001",
+  "summary": "Fixture advisory for ghost",
+  "affected": [
+    {
+      "package": { "name": "ghost", "ecosystem": "npm", "purl": "pkg:npm/ghost" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-dyn-0003",
+  "summary": "Fixture advisory for dynpkg",
+  "affected": [
+    {
+      "package": { "name": "dynpkg", "ecosystem": "npm", "purl": "pkg:npm/dynpkg" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}

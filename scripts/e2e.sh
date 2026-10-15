@@ -8,7 +8,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BIN="${1:-dist/callis-$(uname -s)-$(uname -m)}"
+# Host uname -> canonical dist name (the names scripts/build.ts emits).
+host_target() {
+  local sys machine
+  sys="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  machine="$(uname -m)"
+  case "${sys}/${machine}" in
+    linux/x86_64 | linux/amd64) echo "linux-x64" ;;
+    linux/aarch64 | linux/arm64) echo "linux-arm64" ;;
+    darwin/x86_64 | darwin/amd64) echo "darwin-x64" ;;
+    darwin/arm64 | darwin/aarch64) echo "darwin-arm64" ;;
+    msys* | cygwin* | windows*) echo "windows-x64" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+BIN="${1:-dist/callis-$(host_target)}"
 if [[ ! -x "$BIN" ]]; then
   echo "e2e: using interpreted core (bun run) because $BIN is absent"
   RUN=(bun run packages/cli/src/main.ts)
@@ -18,8 +33,16 @@ fi
 
 status=0
 for demo in examples/vulnerable-demo-*/; do
+  demo="${demo%/}"
   name="$(basename "$demo")"
   echo "== ${name}"
+  # Materialize the installed tree from the committed fixture (install/ is
+  # the committed name; node_modules/ is gitignored package-manager output).
+  # cp -a preserves the .pnpm layout and the symlinks inside it.
+  if [[ -d "$demo/install" ]]; then
+    rm -rf "$demo/node_modules"
+    cp -a "$demo/install" "$demo/node_modules"
+  fi
   mkdir -p "$demo/out"
   mapping_args=()
   [[ -f "$demo/vuln-mappings.json" ]] && mapping_args=(--mappings "$demo/vuln-mappings.json")
@@ -42,10 +65,22 @@ for demo in examples/vulnerable-demo-*/; do
   [[ -f "$demo/expected-exit.txt" ]] && want="$(cat "$demo/expected-exit.txt")"
   if [[ "$code" -ne "$want" ]]; then
     echo "FAIL: ${name}: exit ${code} != expected ${want}"
+    sed 's/^/  | /' "$demo/out/console.log"
     status=1
   fi
   if [[ -f "$demo/expected-reachable.txt" ]]; then
     bun scripts/check-expected.ts "$demo/out/callis-report.json" "$demo/expected-reachable.txt" "$name" || status=1
+  fi
+  # Optional notice assertions (v3.5 notices are console output, never fatal):
+  # every non-comment line must appear verbatim in the console log.
+  if [[ -f "$demo/expected-notices.txt" ]]; then
+    while IFS= read -r want_notice; do
+      [[ -z "${want_notice// /}" || "${want_notice:0:1}" = "#" ]] && continue
+      if ! grep -qF -- "$want_notice" "$demo/out/console.log"; then
+        echo "FAIL: ${name}: missing notice: ${want_notice}"
+        status=1
+      fi
+    done < "$demo/expected-notices.txt"
   fi
 done
 exit "$status"

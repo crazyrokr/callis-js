@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "routes": {
+    "express": ["get", "post", "put", "delete", "patch", "all", "use"],
+    "koa": ["get", "post", "put", "delete", "patch", "all"],
+    "fastify": ["get", "post", "put", "delete", "patch", "all"],
+    "hapi": ["get", "post", "put", "delete", "patch", "options", "on"]
+  },
+  "constructors": {
+    "express": ["express", "createServer"],
+    "koa": ["Koa"],
+    "fastify": ["fastify"],
+    "hapi": ["Server", "server"]
+  },
+  "nextRoutePatterns": ["app/**/route.ts", "app/**/route.js", "pages/api/**/*.ts", "pages/api/**/*.js"],
+  "testPatterns": [
+    "**/*.test.?(c|m)js",
+    "**/*.test.?(c|m)ts",
+    "**/*.spec.?(c|m)js",
+    "**/*.spec.?(c|m)ts",
+    "**/__tests__/**"
+  ]
+}

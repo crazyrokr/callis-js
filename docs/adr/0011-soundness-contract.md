@@ -27,6 +27,14 @@ the release notes, not folklore:
   separately from package-scoped risk, because they cannot be scoped to
   one); every material limitation of a run is machine-readable
   (`limitations`, ADR 0012).
+- **M6 dynamic-risk scope (plan §5.5):** a non-literal `require(expr)` /
+  `import(expr)` in APPLICATION code is a dynamic-construct marker scoped to
+  its enclosing function (or module-init at top level); such an app-scope
+  marker makes EVERY `UNREACHABLE` finding of an installed package
+  `dynamicRisk` — the marker could load and call that package at runtime,
+  regardless of the package's own `evidence.loaded` state — and triggers the
+  `DYNAMIC_RISK` notice. Package-scope markers only (no app-scope construct)
+  leave the verdict untouched.
 - **The 80% dynamic-edge oracle floor is an engineering acceptance gate, not
   evidence of safety** (plan v3.3, P0.1): a passing floor means the graph
   meets the ratcheted minimum; the release notes still state the supported

@@ -6,6 +6,7 @@
 // stale-report deletion, and the --dry-run trio.
 
 import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,21 @@ const CLI = join(import.meta.dir, "..", "..", "cli", "src", "main.ts");
 
 function run(args: string[]): { code: number; out: string; err: string } {
   const r = Bun.spawnSync(["bun", CLI, ...args], { stdout: "pipe", stderr: "pipe" });
+  return { code: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
+}
+
+/** Spawn with a controlled environment (values: set, undefined: remove). */
+function runWithEnv(
+  args: string[],
+  env: Record<string, string | undefined>,
+): { code: number; out: string; err: string } {
+  const allEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) allEnv[k] = v;
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete allEnv[k];
+    else allEnv[k] = v;
+  }
+  const r = Bun.spawnSync(["bun", CLI, ...args], { stdout: "pipe", stderr: "pipe", env: allEnv });
   return { code: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
 }
 
@@ -334,16 +350,28 @@ describe("exit 1 — the failure family", () => {
     expect(f?.supplyPath).toEqual(["app", "vulnpkg"]);
   });
 
-  test("given a MAL-* record, when run, then exit 1 with MALWARE_FAIL", async () => {
+  test("given a MAL-* record with --malware=fail, when run, then exit 1 with MALWARE_FAIL", async () => {
+    const c = await env(
+      await callTree(),
+      { "MAL-1.json": recordFile("MAL-2024-0001", "vulnpkg", undefined, ["1.0.0"]) },
+      sbomDoc([{ name: "vulnpkg", version: "1.0.0" }]),
+    );
+    const r = run(args(c, ["--malware=fail"]));
+    expect(r.code).toBe(1);
+    const rep = await reportOf(c);
+    expect(rep?.meta).toHaveProperty("exitReasons", ["MALWARE_FAIL"]);
+    expect((rep?.findings as { verdict: string }[])[0]?.verdict).toBe("MALICIOUS_PACKAGE");
+  });
+
+  test("given a MAL-* record, when run with the default --malware=warn, then the finding is listed but the exit is 0", async () => {
     const c = await env(
       await callTree(),
       { "MAL-1.json": recordFile("MAL-2024-0001", "vulnpkg", undefined, ["1.0.0"]) },
       sbomDoc([{ name: "vulnpkg", version: "1.0.0" }]),
     );
     const r = run(args(c));
-    expect(r.code).toBe(1);
+    expect(r.code).toBe(0);
     const rep = await reportOf(c);
-    expect(rep?.meta).toHaveProperty("exitReasons", ["MALWARE_FAIL"]);
     expect((rep?.findings as { verdict: string }[])[0]?.verdict).toBe("MALICIOUS_PACKAGE");
   });
 
@@ -489,6 +517,52 @@ describe("exitReasons co-occurrence + report mechanics", () => {
     const rep = JSON.parse(await readFile(stale, "utf8"));
     expect(rep.stale).toBeUndefined();
     expect(rep.analysisStatus).toBeDefined();
+  });
+
+  test("given an EMPTY XDG_CACHE_HOME and no --cache-dir, when run, then the default cache is $HOME/.cache/callis (never the filesystem root)", async () => {
+    const c = await env(
+      await callTree(),
+      { "CVE-1.json": recordFile(CVE.id, "vulnpkg", CVE.fixed) },
+      sbomDoc([{ name: "vulnpkg", version: "1.0.0" }]),
+    );
+    const home = track(await mkdtemp(join("/tmp", "callis-xdg-")));
+    // No --cache-dir flag: the default must honor a set XDG_CACHE_HOME...
+    const withXdg = runWithEnv(
+      [
+        "--project",
+        c.project,
+        "--sbom",
+        c.sbom,
+        "--osv-dir",
+        c.osvDir,
+        "--output",
+        join(c.outDir, "x"),
+        "--format",
+        "json",
+      ],
+      { XDG_CACHE_HOME: home },
+    );
+    expect(withXdg.code).toBe(1);
+    expect(existsSync(join(home, "callis", "osv-index.json"))).toBe(true);
+    // ...and an EMPTY XDG_CACHE_HOME must fall through to $HOME/.cache, not "/callis".
+    const r = runWithEnv(
+      [
+        "--project",
+        c.project,
+        "--sbom",
+        c.sbom,
+        "--osv-dir",
+        c.osvDir,
+        "--output",
+        join(c.outDir, "y"),
+        "--format",
+        "json",
+      ],
+      { HOME: home, XDG_CACHE_HOME: "" },
+    );
+    expect(r.err, r.err).not.toContain("EACCES");
+    expect(r.code).toBe(1);
+    expect(existsSync(join(home, ".cache", "callis", "osv-index.json"))).toBe(true);
   });
 
   test("given the --dry-run trio, when run, then exit 0 with the debug output and NO report", async () => {

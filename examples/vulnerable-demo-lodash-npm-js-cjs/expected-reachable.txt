@@ -1,0 +1,3 @@
+# Positive: lodash@4.17.20 prototype pollution (GHSA-424h-2jq2-7369),
+# called at module scope. Canonical id: the smallest CVE-* alias.
+REACHABLE CVE-2020-8203

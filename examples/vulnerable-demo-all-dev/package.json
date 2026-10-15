@@ -1,0 +1,7 @@
+{
+  "name": "all-dev-demo",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/main.js",
+  "devDependencies": { "devpkg": "1.0.0" }
+}

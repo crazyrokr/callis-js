@@ -1,0 +1,3 @@
+# socklib's optional peer bufferutil is absent: the try/catch require is a
+# library-optional unresolved import (recorded, never counted) — no advisory
+# here, zero findings, analysisStatus stays COMPLETE. Exit 0.

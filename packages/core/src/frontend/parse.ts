@@ -717,7 +717,12 @@ function recordTopLevelVariables(
       if (ts.isIdentifier(callee) && callee.text === "require") {
         const arg = init.arguments[0];
         const literal = arg !== undefined && isStringLiteral(arg) ? arg.text : null;
-        if (literal === null && arg !== undefined) s.unresolvedImports.push(textOf(s, arg));
+        if (literal === null && arg !== undefined) {
+          s.unresolvedImports.push(textOf(s, arg));
+          // A non-literal specifier is a dynamic construct (could resolve to
+          // anything at runtime): marker AND unresolved, like import(expr).
+          recordDynamic(s, "require-expr", init);
+        }
         s.imports.push({
           module: literal ?? (arg !== undefined ? textOf(s, arg) : ""),
           kind: literal === null ? "require-dynamic" : "require",

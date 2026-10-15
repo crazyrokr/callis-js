@@ -1,0 +1,11 @@
+{
+  "id": "GHSA-imp-0004",
+  "summary": "Fixture advisory for impfx (import-time execution)",
+  "affected": [
+    {
+      "package": { "name": "impfx", "ecosystem": "npm", "purl": "pkg:npm/impfx" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "schema_version": "1.4.0"
+}
