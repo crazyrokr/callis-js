@@ -6,6 +6,12 @@
 #   sign     — cosign keyless signing (GitHub OIDC) of every artifact
 #   attest   — cosign SPDX provenance per artifact
 #   publish  — GitHub Release with all artifacts
+#   sign-darwin    (M7d) — Developer ID codesign + notarize + staple on a
+#                          mac runner (only when the APPLE_* secrets exist;
+#                          until then the darwin assets stay experimental
+#                          and unsigned)
+#   sign-windows   (M7d) — Authenticode signtool on a windows runner
+#                          (only when the WINDOWS_PFX secrets exist)
 #
 # Consumers NEVER trust the release's own SHA256SUMS for identity: they
 # verify a digest PINNED IN THEIR REPO (renovate-maintained) and the cosign
@@ -33,11 +39,9 @@ jobs:
       - run: bun install
       - name: Build all targets
         run: bun run build
+      # SHA256SUMS entries are relative to the repo root (dist/...).
       - name: Verify SHA256SUMS
-        run: |
-          cd dist
-          sha256sum -c SHA256SUMS
-          cd ..
+        run: sha256sum -c dist/SHA256SUMS
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
         with:
@@ -71,3 +75,115 @@ jobs:
           echo "Consumers verify with:"
           echo "  sha256sum -c <repo-pinned digest>  (digest pinned in the consumer repo, renovate-maintained)"
           echo "  cosign verify callis-<os>-<arch> --certificate-identity callis-js@github.com --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+
+  # M7d — macOS Developer ID signing + notarization (new work: the JVM
+  # tool ships linux-only unsigned). Runs on a real mac; only when the
+  # APPLE_* secrets exist, until then the darwin assets stay "experimental,
+  # unsigned" (the v1 label).
+  sign-darwin:
+    needs: publish
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - name: Build the darwin targets
+        run: bun run build -- --only darwin-x64,darwin-arm64
+      - name: Import the Developer ID certificate
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PWD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "APPLE_CERTIFICATE not set: ad-hoc signing only (not notarized)"
+            echo "AD_HOC=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "$CERT" | base64 -d > cert.p12
+          security create-keychain -s build.keychain -p buildpw
+          security import cert.p12 -k build.keychain -P "$CERT_PWD" -T /usr/bin/codesign
+          security set-keychain-looping build.keychain
+          security unlock-keychain -p buildpw build.keychain
+          security list-keychains -d user -s build.keychain
+          echo "AD_HOC=0" >> "$GITHUB_ENV"
+      - name: Codesign
+        run: |
+          for f in dist/callis-darwin-x64 dist/callis-darwin-arm64; do
+            if [ "${AD_HOC:-1}" = "1" ]; then
+              codesign --force -s - --timestamp - "$f"
+            else
+              codesign --force --sign "Developer ID Application: callis" --options runtime --timestamp - "$f"
+            fi
+            codesign -dv "$f"
+          done
+      - name: Notarize + staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PWD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ "${AD_HOC:-1}" = "1" ]; then
+            echo "ad-hoc build: nothing to notarize"
+            exit 0
+          fi
+          for f in dist/callis-darwin-x64 dist/callis-darwin-arm64; do
+            zip -q "${f}.zip" "$f"
+            xcrun notarytool submit "${f}.zip" \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PWD" --wait
+            xcrun notarytool staple "${f}.zip"
+            rm -f "${f}.zip"
+          done
+      - name: Replace the darwin release assets with the signed ones
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_if_no_release: true
+          files: |
+            dist/callis-darwin-x64
+            dist/callis-darwin-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # M7d — Windows Authenticode signing (new work). Only when the WINDOWS_PFX
+  # secrets exist; until then the windows asset stays "experimental, unsigned".
+  sign-windows:
+    needs: publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install
+      - name: Build the windows target
+        run: bun run build -- --only windows-x64
+      - name: Decode the Authenticode certificate
+        env:
+          PFX: ${{ secrets.WINDOWS_PFX }}
+        run: |
+          if (-not $env:PFX) {
+            Write-Host "WINDOWS_PFX not set: asset stays unsigned"
+            "HAS_PFX=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            exit 0
+          }
+          [Convert]::FromBase64String($env:PFX) | Set-Content -Path cert.pfx -Encoding Binary
+          "HAS_PFX=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Sign + verify
+        if: env.HAS_PFX == '1'
+        env:
+          PFX_PWD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          $pwd = $env:PFX_PWD
+          & signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f cert.pfx /p $pwd dist\callis-windows-x64
+          & signtool verify /v /pa dist\callis-windows-x64
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Replace the windows release asset with the signed one
+        if: env.HAS_PFX == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_if_no_release: true
+          files: dist/callis-windows-x64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

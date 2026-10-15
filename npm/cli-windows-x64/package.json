@@ -1,0 +1,12 @@
+{
+  "name": "@callis/cli-windows-x64",
+  "version": "0.1.0",
+  "description": "callis binary for windows x64",
+  "license": "MIT",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["callis-windows-x64.exe"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

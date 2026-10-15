@@ -1,0 +1,13 @@
+{
+  "name": "@callis/cli-linux-arm64",
+  "version": "0.1.0",
+  "description": "callis binary for linux arm64 (glibc)",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["glibc"],
+  "files": ["callis-linux-arm64"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

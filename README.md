@@ -89,6 +89,24 @@ exactly this, then run callis against your SBOM + snapshot and cross-check
 your repo-pinned `expected-reachable.txt` — a living integration test of
 your own dependency state. `templates/callis-pin.json` holds the pin.
 
+## npm
+
+```sh
+npm install @callis/cli   # or pnpm / yarn / bun — same pattern
+npx callis --project . --sbom sbom.json --osv-dir osv-npm
+```
+
+`@callis/cli` is a tiny shim (the esbuild/Biome pattern): the platform
+binary comes from the `@callis/cli-<platform>` optionalDependencies
+(`os`/`cpu`/`libc` fields). At run time the shim picks the right asset
+from two host probes — a musl loader → the `-musl` build, an x64 host
+without `AVX2` → the `-baseline` build. The macOS/Windows binaries are
+signed and notarized when the repo's `APPLE_*` / `WINDOWS_PFX` secrets
+are configured; until then they remain "experimental, unsigned".
+On a bare alpine host the musl binary additionally needs `apk add
+libstdc++` (Bun's musl build links it dynamically; the musl docker image
+already carries it).
+
 ## GitHub Action
 
 `action/` runs the pinned release binary (download + repo-pinned digest

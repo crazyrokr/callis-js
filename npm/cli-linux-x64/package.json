@@ -1,0 +1,13 @@
+{
+  "name": "@callis/cli-linux-x64",
+  "version": "0.1.0",
+  "description": "callis binary for linux x64 (glibc, AVX2)",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": ["callis-linux-x64"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

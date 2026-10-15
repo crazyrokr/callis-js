@@ -1,0 +1,26 @@
+{
+  "name": "@callis/cli",
+  "version": "0.1.0",
+  "description": "Is this SBOM vulnerability actually reachable from application code? (the shim — the platform binary comes from the @callis/cli-<platform> optionalDependencies)",
+  "license": "MIT",
+  "bin": {
+    "callis": "bin/callis.cjs"
+  },
+  "files": ["bin"],
+  "optionalDependencies": {
+    "@callis/cli-linux-x64": "0.1.0",
+    "@callis/cli-linux-x64-musl": "0.1.0",
+    "@callis/cli-linux-x64-baseline": "0.1.0",
+    "@callis/cli-linux-arm64": "0.1.0",
+    "@callis/cli-linux-arm64-musl": "0.1.0",
+    "@callis/cli-darwin-x64": "0.1.0",
+    "@callis/cli-darwin-arm64": "0.1.0",
+    "@callis/cli-windows-x64": "0.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
