@@ -1,2 +1,0 @@
-# Zero npm components before dev filtering: the empty-SBOM guard fires,
-# exit 3 with a minimal report.

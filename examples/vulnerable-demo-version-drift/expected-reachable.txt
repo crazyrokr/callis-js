@@ -1,3 +1,0 @@
-# Stale SBOM: SBOM 2.5.0 is outside every range, installed 1.2.0 is inside —
-# the finding is kept (matchedOn: installed, VERSION_MISMATCH state).
-REACHABLE GHSA-drift-0005

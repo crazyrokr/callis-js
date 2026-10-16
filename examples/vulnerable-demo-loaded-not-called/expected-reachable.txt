@@ -1,3 +1,0 @@
-# Imported for side effects, vulnerable export never called: UNREACHABLE at
-# the default call tier (evidence.loaded = true, loadedNotCalled exposure).
-UNREACHABLE GHSA-side-0002

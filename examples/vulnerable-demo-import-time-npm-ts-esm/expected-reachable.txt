@@ -1,4 +1,0 @@
-# Import-time execution: the mapping target runs on import (module-init
-# reaches doWork) even though no exported call exists — mapping-level
-# REACHABLE below the call tier (the import-time limitation is recorded).
-REACHABLE GHSA-imp-0004

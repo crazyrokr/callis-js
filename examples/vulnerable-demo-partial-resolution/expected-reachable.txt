@@ -1,4 +1,0 @@
-# vulnpkg is resolved but never imported (UNREACHABLE); ghost has an advisory
-# but no source on disk (NO_SOURCE). Exit 0, analysisStatus PARTIAL.
-UNREACHABLE GHSA-vuln-0006
-NO_SOURCE GHSA-ghost-0001

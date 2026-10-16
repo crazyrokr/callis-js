@@ -60,27 +60,12 @@ for demo in examples/vulnerable-demo-*/; do
     --output "$demo/out/callis-report" \
     --cache-dir "$demo/out/cache" \
     > "$demo/out/console.log" 2>&1 || code=$?
-  # Expected exit code per demo lives in expected-exit.txt when nonzero.
-  want=0
-  [[ -f "$demo/expected-exit.txt" ]] && want="$(cat "$demo/expected-exit.txt")"
-  if [[ "$code" -ne "$want" ]]; then
-    echo "FAIL: ${name}: exit ${code} != expected ${want}"
+  # Expected exit code + verdicts + notices, all from the shared table in
+  # scripts/golden-expected.ts (the in-suite test e2e.demos.test.ts checks
+  # the interpreted core against the same table).
+  if ! bun scripts/check-expected.ts "$demo/out/callis-report.json" "$demo/out/console.log" "$name" "$code"; then
     sed 's/^/  | /' "$demo/out/console.log"
     status=1
-  fi
-  if [[ -f "$demo/expected-reachable.txt" ]]; then
-    bun scripts/check-expected.ts "$demo/out/callis-report.json" "$demo/expected-reachable.txt" "$name" || status=1
-  fi
-  # Optional notice assertions (v3.5 notices are console output, never fatal):
-  # every non-comment line must appear verbatim in the console log.
-  if [[ -f "$demo/expected-notices.txt" ]]; then
-    while IFS= read -r want_notice; do
-      [[ -z "${want_notice// /}" || "${want_notice:0:1}" = "#" ]] && continue
-      if ! grep -qF -- "$want_notice" "$demo/out/console.log"; then
-        echo "FAIL: ${name}: missing notice: ${want_notice}"
-        status=1
-      fi
-    done < "$demo/expected-notices.txt"
   fi
 done
 exit "$status"

@@ -1,2 +1,0 @@
-# Bumped to the patched version (4.17.21, fixed is exclusive): no candidate,
-# zero findings, exit 0.

@@ -1,3 +1,0 @@
-# Every npm component is dev-only: the advisory-bearing one is reported as
-# DEV_ONLY (no reachability analysis without --include-dev). Exit 0.
-DEV_ONLY GHSA-dev-0008
