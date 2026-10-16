@@ -1,3 +1,0 @@
-# One advisory record covers two packages: two findings, same canonical id,
-# both REACHABLE (each package's vulnerable export is called).
-REACHABLE CVE-2020-8203

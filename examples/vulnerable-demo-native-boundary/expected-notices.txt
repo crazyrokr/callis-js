@@ -1,1 +1,0 @@
-exposure: 0 dynamic-risk, 0 no-source, 1 native-opaque, 0 unscoped, 0 loaded-not-called

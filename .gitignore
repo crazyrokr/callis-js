@@ -20,6 +20,9 @@ examples/**/out/
 # logs and OS cruft
 *.log
 .DS_Store
+# callis's own report trio at the default output path (running the tool
+# from any cwd writes callis-report.{json,junit.xml,sarif} there)
+callis-report.*
 
 # NOTE: examples/*/install/ and examples/*/osv/ are COMMITTED on purpose —
 # hand-written fixture trees (installed package state and hand-pinned OSV

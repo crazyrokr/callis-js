@@ -185,7 +185,12 @@ from a real `yarn install`, which callis extracts into its own
 content-addressed cache at run time) and its OSV records in `osv/`
 (hand-pinned); `scripts/e2e.sh` materializes the gitignored
 `node_modules/` from `install/` at run time, so a fresh checkout
-reproduces everything.
+reproduces everything. Each demo's EXPECTED result (exit code, finding
+verdicts, and console notices) is a single table in
+`scripts/golden-expected.ts`, consumed by BOTH gates: `scripts/e2e.sh`
+(checks the compiled binary) and
+`packages/core/test/e2e.demos.test.ts` (checks the interpreted core,
+run by `bun run check`).
 
 ## Repository layout
 

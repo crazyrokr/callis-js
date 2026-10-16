@@ -1,1 +1,0 @@
-# --allow-empty-sbom: the run proceeds with zero candidates, exit 0.

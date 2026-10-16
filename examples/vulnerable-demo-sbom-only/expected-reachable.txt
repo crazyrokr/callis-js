@@ -1,3 +1,0 @@
-# --sbom-only: the advisory applies but no call graph is built — APPLICABLE,
-# analysisStatus NOT_PERFORMED, every component NOT_CHECKED. Exit 0.
-APPLICABLE CVE-2020-8203

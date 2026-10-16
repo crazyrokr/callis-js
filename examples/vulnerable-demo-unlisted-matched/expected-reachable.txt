@@ -1,3 +1,0 @@
-# --match-installed: the unlisted instance produces a finding (source:
-# installed), REACHABLE, exit 1.
-REACHABLE GHSA-vuln-0006

@@ -1,3 +1,0 @@
-# The package is loaded and its boundary is .node: NATIVE_OPAQUE (reached),
-# default --opaque-native=warn -> exit 0.
-NATIVE_OPAQUE GHSA-nat-0007

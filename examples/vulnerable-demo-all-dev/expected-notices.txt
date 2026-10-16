@@ -1,1 +1,0 @@
-all components dev-only — use --include-dev to analyze them

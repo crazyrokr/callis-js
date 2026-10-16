@@ -1,3 +1,0 @@
-# Yarn PnP layout (M7c): the lockfile tie graph + extracted zip sources
-# still yield the positive verdict for the vulnerable export.
-REACHABLE CVE-2020-8203

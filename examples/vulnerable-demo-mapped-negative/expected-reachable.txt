@@ -1,3 +1,0 @@
-# Artifact level: loaded and called (chunk). Mapping target (template)
-# never reached: method-level UNREACHABLE.
-UNREACHABLE CVE-2020-8203

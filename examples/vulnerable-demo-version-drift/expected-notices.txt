@@ -1,1 +1,0 @@
-component drifted: SBOM version 2.5.0 is outside every affected range; the finding is based on the installed version 1.2.0
