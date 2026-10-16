@@ -23,7 +23,10 @@ exactly what `--print-cache-key` prints):
    sha256; (5) **every lockfile variant present** (`package-lock.json`,
    `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`,
    `bun.lock`/`bun.lockb`) as `path:sha256` lines; (6) the **install
-   fingerprint** (ADR 0014), **extended by `--hash-installed` to content
+   fingerprint** (ADR 0014 — the npm `node_modules/.package-lock.json`,
+   pnpm `.modules.yaml`, and yarn PnP `.yarn/install-state.gz` state
+   files; yarn's is hashed as RAW content, so the key covers Yarn 4.x's
+   binary form), **extended by `--hash-installed` to content
    hashes of every installed file** — without it, task-level caching cannot
    see an in-place patch (documented caveat); (7) the **whole-tree
    application-source hash** (`path:sha256` lines; **the default exclusion

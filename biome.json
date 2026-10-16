@@ -15,7 +15,10 @@
       "examples/**/osv/**",
       "examples/**/sbom.json",
       "examples/**/vuln-mappings.json",
-      "examples/**/package.json"
+      "examples/**/package.json",
+      "examples/**/.pnp.cjs",
+      "examples/**/.yarn/**",
+      "examples/**/yarn.lock"
     ]
   },
   "formatter": {

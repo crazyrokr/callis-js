@@ -2,7 +2,7 @@
 // layouts, instances, app-vs-library realpath rule, workspaces, hoisting.
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildProjectModel,
@@ -34,7 +34,7 @@ describe("layout detection (plan 5.3)", () => {
     expect(detectLayout(root)).toBe("pnpm");
   });
 
-  test("given a .pnp.cjs file, when detected, then the layout is pnp (refused)", async () => {
+  test("given a .pnp.cjs file, when detected, then the layout is pnp", async () => {
     const root = await mkFixture({ files: { ".pnp.cjs": "// pnp" } });
     expect(detectLayout(root)).toBe("pnp");
   });
@@ -44,10 +44,29 @@ describe("layout detection (plan 5.3)", () => {
     expect(detectLayout(root)).toBe("pnpm");
   });
 
-  test("given Yarn PnP, when the model is built, then a UsageError (exit 2) is thrown with the node-modules hint", async () => {
+  test("given a PnP marker at a monorepo ancestor, when a subpackage is analyzed, then the layout is pnp", async () => {
+    const root = await mkFixture({
+      files: { ".pnp.cjs": "// pnp", "packages/app/package.json": pkg("app", "1.0.0") },
+    });
+    expect(detectLayout(join(root, "packages", "app"))).toBe("pnp");
+  });
+
+  test("given a degraded PnP install (marker only: no install state, no zips), when the model is built, then a UsageError (exit 2) with a yarn install hint", async () => {
     const root = await mkFixture({ files: { ".pnp.cjs": "// pnp" } });
-    expect(() => buildProjectModel(root)).toThrow(UsageError);
-    expect(() => buildProjectModel(root)).toThrow("nodeLinker: node-modules");
+    // Isolated cache dirs: the default global yarn cache may hold zips from
+    // OTHER projects, and those are (correctly) not this project's install.
+    const base = join(root, "..", `iso-${Date.now()}`);
+    mkdirSync(join(base, "cache"), { recursive: true });
+    try {
+      expect(() =>
+        buildProjectModel(root, { cacheDir: join(base, "cache"), globalCacheDir: join(base, "global") }),
+      ).toThrow(UsageError);
+      expect(() =>
+        buildProjectModel(root, { cacheDir: join(base, "cache"), globalCacheDir: join(base, "global") }),
+      ).toThrow(/yarn install/);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 

@@ -23,7 +23,11 @@
   fetched from the same release (plan v3.5, item 4)**.
 
 **Untrusted inputs:** the application source, `node_modules`, and OSV
-record contents — **parsed, never executed**.
+record contents — **parsed, never executed**. Yarn PnP artifacts join
+that class: the generated `.pnp.cjs` is a layout MARKER ONLY — never
+executed (node-linker layouts and their generated artifacts are data,
+not code); `.yarn/install-state.gz` and `.yarn/cache/*.zip` are parsed
+as data (below).
 
 - **One subtlety pinned explicitly: a checksum computed from the same
   untrusted artifact is not independent evidence of integrity** — the pin
@@ -44,7 +48,12 @@ record contents — **parsed, never executed**.
 - **Explicit resource limits (plan v3.3, P1.5):** per-file byte caps, total
   parsed-byte caps, graph node/edge caps, bounded worker concurrency,
   per-worker timeouts with a cancellation protocol; OSV-archive unpacking
-  validates entry paths and rejects traversal; JSON readers bound nesting
+  validates entry paths and rejects traversal; **yarn cache zip
+  extraction validates entry paths (absolute paths and `..` segments
+  rejected — zip-slip), rejects encrypted methods and zip64, and caps
+  entry count and total size** (each archive is extracted fully, ONCE,
+  content-addressed into the callis cache, and the recorded path is
+  reused for every later need — never re-extracted); JSON readers bound nesting
   and reject oversized or malformed records; **an intentional limit hit is
   diagnosed distinctly from an OOM kill** (both map to the documented
   analysis-failure policy, exit 3).

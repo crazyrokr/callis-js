@@ -30,7 +30,15 @@ runtime-independent. Four explicit profiles:
   alias with no runtime mechanism stays unresolved** (the negative fixture
   holds). M0 decides: apply b2, or drop Next/Nest from the v1 framework
   matrix.
-- **(c) Bundler/framework-specific adapters:** post-v1 (M7c).
+- **(c) Bundler/framework-specific adapters:** M7c implements the
+  first — **Yarn PnP as a data-driven layout profile**: the generated
+  `.pnp.cjs` is a layout MARKER ONLY (never executed — ADR 0017); the
+  resolution data comes from `.yarn/install-state.gz`, the berry
+  `yarn.lock` graph, and the `.yarn/cache/*.zip` sources (extracted
+  fully, once, content-addressed). Bare specifiers resolve strictly:
+  only the importing workspace's declared dependencies resolve (per
+  workspace isolation), `workspace:` refs resolve to the workspace
+  directory, and anything not declared stays unresolved.
 
 Rules:
 

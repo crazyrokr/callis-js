@@ -25,7 +25,7 @@ import { SCHEMA_VERSION, TOOL_VERSION } from "../index.js";
 import { loadSnapshot } from "../osv/loader.js";
 import { normalizeRecords, relatedIds } from "../osv/normalize.js";
 import { allDevNotice, emptySbomGuard, totalResolutionGuard } from "../project/guards.js";
-import { npmLockfileGraph, pnpmLockfileGraph } from "../project/lockfile.js";
+import { npmLockfileGraph, pnpmLockfileGraph, yarnLockfileGraph } from "../project/lockfile.js";
 import { unlistedInstalled } from "../project/reconcile.js";
 import { buildProjectModel } from "../project/scan.js";
 import { type ComponentResolution, allComponentResolutions, tieGraphFor } from "../project/tie.js";
@@ -489,8 +489,19 @@ export async function runAnalysis(optsIn: EngineOptions, console: Console = DEFA
   const resolutions = new Map<string, ComponentResolution>();
   let tieGraph: TieGraph | null = null;
   if (!opts.sbomOnly) {
-    model = buildProjectModel(opts.project);
-    const lockGraph = model.layout === "pnpm" ? pnpmLockfileGraph(model.root) : npmLockfileGraph(model.installRoot);
+    model = buildProjectModel(opts.project, { cacheDir: opts.cacheDir });
+    const pnpContext = model.pnp;
+    const lockGraph =
+      model.layout === "pnpm"
+        ? pnpmLockfileGraph(model.root)
+        : model.layout === "pnp"
+          ? yarnLockfileGraph(model.installRoot, {
+              workspaceDirs: model.workspaces.map((w) => w.dir),
+              // Node paths are the extraction dirs — tie matching (name+version+path)
+              // then works through the usual realpath comparison.
+              locate: (name, version) => pnpContext?.byLocator.get(`${name}@${version}`),
+            })
+          : npmLockfileGraph(model.installRoot);
     tieGraph = tieGraphFor(sbom, lockGraph);
     const all = allComponentResolutions(
       sbom.components.map((c) => ({

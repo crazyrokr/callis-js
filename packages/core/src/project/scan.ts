@@ -2,11 +2,15 @@
 // (plan section 5.3, ADR 0005, ADR 0014).
 //
 // npm / Bun / Yarn(node-modules) share the node_modules walk; pnpm adds the
-// .pnpm virtual store (symlinked); Yarn PnP is refused with exit 2 (v1).
+// .pnpm virtual store (symlinked); Yarn PnP (M7c) builds a data-driven model
+// from install-state + yarn.lock + cache zips — never executing `.pnp.cjs`
+// (ADR 0017).
 
 import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { UsageError } from "../util/errors.js";
+import { buildPnpModel } from "./pnp.js";
 import type { Layout, PackageInstance, ProjectModel, Workspace } from "./types.js";
 
 export interface PkgJson {
@@ -42,13 +46,24 @@ function isDirectory(path: string): boolean {
 }
 
 /**
- * Detect the install layout from the project root:
- * pnp (refused by the caller), pnpm (.pnpm store), or npm-style node_modules.
+ * Detect the install layout from the project root: pnp (`.pnp.cjs` marker, or
+ * a berry yarn.lock with a .yarn/ dir), pnpm (.pnpm store), or npm-style
+ * node_modules. Like `findInstallRoot`, the check walks up (bounded, 4
+ * levels) so a monorepo subpackage finds the install at its repo root.
  */
 export function detectLayout(root: string): Layout {
-  if (isDirectory(join(root, "node_modules", ".pnpm"))) return "pnpm";
-  if (exists(join(root, ".pnp.cjs")) || exists(join(root, ".pnp.js"))) return "pnp";
-  if (isDirectory(join(root, "node_modules"))) return "npm";
+  let dir = root;
+  for (let depth = 0; depth <= 4; depth += 1) {
+    if (isDirectory(join(dir, "node_modules", ".pnpm"))) return "pnpm";
+    if (exists(join(dir, ".pnp.cjs")) || exists(join(dir, ".pnp.js"))) return "pnp";
+    if (isDirectory(join(dir, "node_modules"))) return "npm";
+    // Secondary PnP marker: a berry lockfile next to a .yarn/ dir, with no
+    // node_modules here (a `nodeLinker: node-modules` install scans npm).
+    if (exists(join(dir, "yarn.lock")) && isDirectory(join(dir, ".yarn"))) return "pnp";
+    const parent = join(dir, "..");
+    if (parent === dir) break;
+    dir = parent;
+  }
   // A lockfile alone still tells us which layout to expect.
   const lock = lockfileNameAt(root);
   if (lock === "pnpm-lock.yaml") return "pnpm";
@@ -378,16 +393,32 @@ function pnpmWorkspaceDirs(root: string): string[] {
   return dirs;
 }
 
+export interface ProjectModelOptions {
+  /** Callis cache dir (PnP zip extraction root; defaults to the CLI default). */
+  cacheDir?: string;
+  /** Global yarn cache override (PnP only). */
+  globalCacheDir?: string;
+}
+
+/** Default callis cache dir (CLI parity: `$XDG_CACHE_HOME/callis`, else `~/.cache/callis`). */
+function defaultCacheDir(): string {
+  const xdg = process.env.XDG_CACHE_HOME;
+  const base = xdg !== undefined && xdg.length > 0 ? xdg : join(homedir(), ".cache");
+  return join(base, "callis");
+}
+
 /**
- * Build the project model. Yarn PnP is refused with a UsageError (exit 2, v1
- * scope — the hint says to use `nodeLinker: node-modules`).
+ * Build the project model. Yarn PnP (M7c) builds the data-driven model from
+ * install-state + yarn.lock + cache zips (a degraded install without either
+ * install state AND zips is a UsageError with a `yarn install` hint).
  */
-export function buildProjectModel(root: string): ProjectModel {
+export function buildProjectModel(root: string, opts: ProjectModelOptions = {}): ProjectModel {
   const layout = detectLayout(root);
   if (layout === "pnp") {
-    throw new UsageError(
-      "Yarn PnP is not supported in v1: set `nodeLinker: node-modules` in .yarnrc.yml and reinstall",
-    );
+    return buildPnpModel(root, {
+      cacheDir: opts.cacheDir ?? defaultCacheDir(),
+      ...(opts.globalCacheDir !== undefined ? { globalCacheDir: opts.globalCacheDir } : {}),
+    });
   }
   const installRoot = findInstallRoot(root);
   const scannedDirs = scanLevels(root, installRoot);

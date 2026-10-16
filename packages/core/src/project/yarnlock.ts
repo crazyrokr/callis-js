@@ -100,6 +100,17 @@ export function parseDescriptor(desc: string): YarnDescriptor {
 }
 
 /**
+ * Normalize one descriptor to its canonical lockfile key part
+ * (`name@npm:range`); non-npm protocols (workspace, portal, …) keep the
+ * raw descriptor as their key.
+ */
+export function normalizeDescriptor(desc: string): string {
+  const d = parseDescriptor(desc);
+  if (d.protocol !== "npm" && d.protocol !== "") return desc;
+  return `${d.name}@npm:${d.range}`;
+}
+
+/**
  * Parse berry lockfile text. UsageError on any line outside the strict
  * subset (including a non-berry / yarn 1.x classic file).
  */

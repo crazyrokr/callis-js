@@ -176,12 +176,16 @@ bun scripts/binary-smoke.ts    # self-sufficiency + hostile-cwd + bundle graph
 bun scripts/binary-parity.ts   # compiled vs interpreted: byte-identical reports
 ```
 
-The 23 golden demos under `examples/` cover npm/pnpm/yarn/bun, TS/JS,
+The 24 golden demos under `examples/` cover npm/pnpm/yarn/bun, TS/JS,
 CJS/ESM, every verdict family, and every exit-code path. Each demo's
 installed state is committed in `install/` (hand-written fixtures; the
-pnpm demo carries its `.pnpm/` layout) and its OSV records in `osv/`
-(hand-pinned); `scripts/e2e.sh` materializes the gitignored `node_modules/`
-from `install/` at run time, so a fresh checkout reproduces everything.
+pnpm demo carries its `.pnpm/` layout; the Yarn PnP demo carries its
+`.yarn/` layout — cache zips + install state + the berry `yarn.lock`
+from a real `yarn install`, which callis extracts into its own
+content-addressed cache at run time) and its OSV records in `osv/`
+(hand-pinned); `scripts/e2e.sh` materializes the gitignored
+`node_modules/` from `install/` at run time, so a fresh checkout
+reproduces everything.
 
 ## Repository layout
 

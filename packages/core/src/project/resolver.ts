@@ -10,8 +10,10 @@
 
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, resolve as resolvePath, sep } from "node:path";
+import { Range } from "semver";
 import { type PkgJson, readPkgJson } from "./scan.js";
 import type { ProjectModel, ResolutionDecision } from "./types.js";
+import { normalizeDescriptor, parseDescriptor, toDescriptor } from "./yarnlock.js";
 
 const PROBE_EXTENSIONS = [".mjs", ".cjs", ".mts", ".cts", ".js", ".ts"] as const;
 
@@ -221,12 +223,22 @@ export function resolveSpecifier(
     if (resolved !== null) return resolved;
   }
 
-  // node_modules walk from fromDir up through the project (hoisting).
   // "p/lib/x" resolves the package "p" then subpath "./lib/x" (scoped:
   // "@s/p/x" -> package "@s/p", subpath "./x").
   const slash = spec.startsWith("@") ? spec.indexOf("/", spec.indexOf("/") + 1) : spec.indexOf("/");
   const pkgName = slash < 0 ? spec : spec.slice(0, slash);
   const subpath = slash < 0 ? "." : `./${spec.slice(slash + 1)}`;
+
+  // Yarn PnP (M7c): there is no node_modules — the importer's declared
+  // dependency resolves through the berry lockfile to the extracted zip
+  // (strict PnP isolation: a package the importer does not declare does not
+  // resolve; nothing below could find one either).
+  if (model.layout === "pnp" && model.pnp !== undefined) {
+    const resolved = resolvePnpBare(pkgName, subpath, fromDir, ctx, base, model);
+    if (resolved !== null) return resolved;
+  }
+
+  // node_modules walk from fromDir up through the project (hoisting).
   let dir = fromDir;
   for (;;) {
     const candidateDir = join(dir, "node_modules", pkgName);
@@ -257,6 +269,107 @@ export function resolveSpecifier(
     }
   }
   return { ...base, status: "unresolved", moduleFormat: "unknown", reason: "no candidate matched" };
+}
+
+/**
+ * Bare specifier under Yarn PnP (M7c): the IMPORTER'S manifest declares the
+ * dependency (strict PnP isolation — an undeclared package never resolves),
+ * the berry lockfile pins it to name@version, and the content-addressed
+ * extraction dir of the package zip is its install dir (exports/main/index
+ * resolution is the usual `resolveWithinPackage`). `workspace:` protocol
+ * deps resolve to the workspace project dir instead.
+ */
+function resolvePnpBare(
+  pkgName: string,
+  subpath: string,
+  fromDir: string,
+  ctx: Ctx,
+  base: { spec: string; fromDir: string; candidates: string[] },
+  model: ProjectModel,
+): ResolutionDecision | null {
+  const pnp = model.pnp;
+  if (pnp === undefined) return null;
+
+  // Importer manifest: the enclosing workspace project (longest prefix),
+  // else the enclosing zip instance, else the root manifest.
+  let manifestDir: string | null = null;
+  for (const dir of pnp.workspaceDirs) {
+    if (fromDir !== dir && !fromDir.startsWith(`${dir}${sep}`)) continue;
+    if (manifestDir === null || dir.length > manifestDir.length) manifestDir = dir;
+  }
+  if (manifestDir === null) manifestDir = enclosingInstanceDir(fromDir, model);
+  if (manifestDir === null) manifestDir = model.root;
+  const manifest = readPkgJson(manifestDir);
+  if (manifest === null) return null;
+  const deps: Record<string, string> = {
+    ...(manifest.dependencies ?? {}),
+    ...(manifest.optionalDependencies ?? {}),
+    ...(manifest.peerDependencies ?? {}),
+    ...(manifest.devDependencies ?? {}),
+  };
+  const rawRange = deps[pkgName];
+  if (rawRange === undefined) return null; // undeclared: strict PnP does not resolve it
+  const descriptor = toDescriptor(pkgName, rawRange);
+  base.candidates.push(descriptor);
+  const desc = parseDescriptor(descriptor);
+
+  if (desc.protocol === "workspace") {
+    const ws = workspaceDirByName(pnp.workspaceDirs, desc.name);
+    if (ws === null) return null;
+    const wsPkg = readPkgJson(ws);
+    if (wsPkg === null) return null;
+    return resolveWithinPackage(ws, wsPkg, subpath, ctx, base);
+  }
+
+  let key = pnp.canonical.get(normalizeDescriptor(descriptor));
+  if (key === undefined) key = semverLocatorKey(pnp.byLocator, desc) ?? undefined;
+  const dir = key === undefined ? undefined : pnp.byLocator.get(key);
+  if (dir === undefined) return null; // zip absent from every cache
+  const pkg = readPkgJson(dir);
+  if (pkg === null) return null;
+  return resolveWithinPackage(dir, pkg, subpath, ctx, base);
+}
+
+/** The package instance directory enclosing a dir (longest realDir prefix). */
+function enclosingInstanceDir(dir: string, model: ProjectModel): string | null {
+  let best: string | null = null;
+  for (const i of model.instances) {
+    if (dir === i.realDir || dir.startsWith(`${i.realDir}${sep}`)) {
+      if (best === null || i.realDir.length > best.length) best = i.realDir;
+    }
+  }
+  return best;
+}
+
+/** The workspace dir whose package.json carries the given name (first, deterministic). */
+function workspaceDirByName(dirs: string[], name: string): string | null {
+  for (const dir of dirs) {
+    const pkg = readPkgJson(dir);
+    if (pkg !== null && pkg.name === name) return dir;
+  }
+  return null;
+}
+
+/**
+ * Semver fallback when the canonical map misses: the descriptor range against
+ * the installed name@version keys (same rule as the lockfile graph). An empty
+ * range never guesses between versions.
+ */
+function semverLocatorKey(byLocator: Map<string, string>, desc: { name: string; range: string }): string | null {
+  if (desc.range === "") return null;
+  for (const key of [...byLocator.keys()].sort()) {
+    const at = key.lastIndexOf("@");
+    if (at <= 0) continue;
+    const name = key.slice(0, at);
+    const version = key.slice(at + 1);
+    if (name !== desc.name || version.length === 0) continue;
+    try {
+      if (new Range(desc.range).test(version)) return key;
+    } catch {
+      // not semver (a dist-tag): no match
+    }
+  }
+  return null;
 }
 
 function resolveRelative(
