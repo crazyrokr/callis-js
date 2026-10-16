@@ -8,8 +8,10 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, posix, sep } from "node:path";
+import { Range } from "semver";
 import { decodePnpmId } from "./scan.js";
 import type { TieGraph, TieNode } from "./types.js";
+import { type YarnLockEntry, parseDescriptor, parseYarnLockFile, toDescriptor } from "./yarnlock.js";
 
 /**
  * npm package-lock.json / npm-shrinkwrap.json at the given root -> lockfile
@@ -188,4 +190,120 @@ function statIfExists(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Yarn PnP tie graph from the berry `yarn.lock` (M7c, ADR 0014) — in contrast
+ * to pnpm (on-disk symlinks), lockfile-DERIVED: every `npm:`-protocol entry
+ * is one canonical node `name@version` (peer variants collapse onto it),
+ * entry dependency descriptors are edges, and each workspace project's
+ * manifest contributes a root node with its direct deps. A node's `path` is
+ * the caller-supplied install location (the extracted zip dir); when unknown
+ * it stays undefined (tie matching then falls back to name+version).
+ */
+export function yarnLockfileGraph(
+  root: string,
+  opts: {
+    /** Workspace project dirs (each `package.json` contributes a root node). */
+    workspaceDirs?: string[];
+    /** (name, version) → install location (e.g. the extracted zip dir). */
+    locate?: (name: string, version: string) => string | undefined;
+  } = {},
+): TieGraph | null {
+  const entries = parseYarnLockFile(root);
+  if (entries === null || entries.length === 0) return null;
+
+  const nodes = new Map<string, TieNode>();
+  const edges: Array<[string, string]> = [];
+  /** Normalized descriptor → canonical node key. */
+  const canonical = new Map<string, string>();
+  const byName = new Map<string, string[]>();
+
+  const norm = (desc: string): string => {
+    const d = parseDescriptor(desc);
+    if (d.protocol !== "npm" && d.protocol !== "") return desc;
+    return `${d.name}@npm:${d.range}`;
+  };
+
+  const addNode = (e: YarnLockEntry): string | null => {
+    if (e.protocol === "workspace" || e.version === "") return null;
+    const key = `${e.name}@${e.version}`;
+    if (!nodes.has(key)) {
+      const node: TieNode = { key, name: e.name, version: e.version };
+      const loc = opts.locate?.(e.name, e.version);
+      if (loc !== undefined) node.path = loc;
+      nodes.set(key, node);
+      const arr = byName.get(e.name) ?? [];
+      arr.push(key);
+      byName.set(e.name, arr);
+    }
+    return key;
+  };
+
+  for (const e of entries) {
+    const key = addNode(e);
+    if (key === null) continue;
+    for (const d of e.descriptors) {
+      const n = norm(d);
+      if (!canonical.has(n)) canonical.set(n, key);
+    }
+  }
+
+  const resolveTarget = (desc: string): string | null => {
+    const hit = canonical.get(norm(desc));
+    if (hit !== undefined) return hit;
+    const d = parseDescriptor(desc);
+    if (d.protocol === "workspace") return null; // workspace project, no package node
+    const keys = byName.get(d.name) ?? [];
+    let matched: string | null = null;
+    for (const k of keys) {
+      const n = nodes.get(k);
+      if (n === undefined || n.version === undefined || n.version.length === 0) continue;
+      if (d.range === "") {
+        matched = k;
+        break;
+      }
+      try {
+        if (new Range(d.range).test(n.version)) {
+          matched = k;
+          break;
+        }
+      } catch {
+        // Unparsable range — no semver match.
+      }
+    }
+    return matched;
+  };
+
+  for (const e of entries) {
+    if (e.protocol === "workspace" || e.version === "") continue;
+    const from = `${e.name}@${e.version}`;
+    for (const desc of [...e.dependencies.values()]) {
+      const to = resolveTarget(desc);
+      if (to !== null) edges.push([from, to]);
+    }
+  }
+
+  type WsManifest = { name?: unknown; dependencies?: unknown };
+  for (const dir of opts.workspaceDirs ?? []) {
+    let manifest: WsManifest | null = null;
+    try {
+      manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as WsManifest;
+    } catch {
+      continue;
+    }
+    if (manifest === null || typeof manifest.name !== "string" || manifest.name.length === 0) continue;
+    const wsKey = `ws:${dir}`;
+    if (!nodes.has(wsKey)) nodes.set(wsKey, { key: wsKey, name: manifest.name, path: dir });
+    if (manifest.dependencies !== null && typeof manifest.dependencies === "object") {
+      for (const [depName, range] of Object.entries(manifest.dependencies as Record<string, unknown>)) {
+        if (typeof range !== "string" || range.length === 0) continue;
+        const to = resolveTarget(toDescriptor(depName, range));
+        if (to !== null) edges.push([wsKey, to]);
+      }
+    }
+  }
+
+  if (nodes.size === 0) return null;
+  return { source: "lockfile", nodes, edges };
 }
