@@ -1,7 +1,8 @@
 // Deterministic install fingerprint (plan section 5.3, ADR 0014/0015).
 //
 // Instance identities + realpaths + install-state file contents (npm
-// node_modules/.package-lock.json, pnpm .modules.yaml when present). Joining
+// node_modules/.package-lock.json, pnpm .modules.yaml, PnP
+// .yarn/install-state.gz — each when present). Joining
 // the cache keys makes locally patched packages, lockfile/tree drift, and
 // unreadable directories visible instead of silently changing verdicts.
 // Same byte-order pin algorithm as the OSV checksum (never localeCompare).
@@ -23,7 +24,9 @@ export function readStateFiles(installRoot: string, layout: string): StateFile[]
   const candidates =
     layout === "pnpm"
       ? [join(installRoot, "node_modules", ".modules.yaml")]
-      : [join(installRoot, "node_modules", ".package-lock.json")];
+      : layout === "pnp"
+        ? [join(installRoot, ".yarn", "install-state.gz")]
+        : [join(installRoot, "node_modules", ".package-lock.json")];
   for (const path of candidates) {
     try {
       out.push({ path, sha256: sha256Hex(readFileSync(path)) });

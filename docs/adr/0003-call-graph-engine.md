@@ -59,3 +59,14 @@ receiver typing:
 - **Reporting:** `graph.stats.pointer = {sites, added, pruned}` and the
   `pointer-analysis: …` entry in `limitations[]`; `--cha` runs carry the
   existing `cha: …` limitation instead.
+
+## Known limitations (documented, not silent)
+
+- **Top-level nested calls (found M7c-1c):** at module top level, a call
+  expression nested inside ANOTHER call's arguments
+  (`console.log(pkg.vuln())`) is recorded as ONE top-level call (the outer
+  one) — the inner call site is not a distinct IR entry, so no edge is
+  built for it (the package reports `loaded-not-called`, i.e. a false
+  NEGATIVE for reachability, never a false positive). Calls in statement or
+  assignment position (`pkg.vuln();`, `const r = pkg.vuln()`) and calls
+  inside function bodies are unaffected. Affects every layout equally.

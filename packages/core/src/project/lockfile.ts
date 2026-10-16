@@ -11,7 +11,13 @@ import { join, posix, sep } from "node:path";
 import { Range } from "semver";
 import { decodePnpmId } from "./scan.js";
 import type { TieGraph, TieNode } from "./types.js";
-import { type YarnLockEntry, parseDescriptor, parseYarnLockFile, toDescriptor } from "./yarnlock.js";
+import {
+  type YarnLockEntry,
+  normalizeDescriptor,
+  parseDescriptor,
+  parseYarnLockFile,
+  toDescriptor,
+} from "./yarnlock.js";
 
 /**
  * npm package-lock.json / npm-shrinkwrap.json at the given root -> lockfile
@@ -219,12 +225,6 @@ export function yarnLockfileGraph(
   const canonical = new Map<string, string>();
   const byName = new Map<string, string[]>();
 
-  const norm = (desc: string): string => {
-    const d = parseDescriptor(desc);
-    if (d.protocol !== "npm" && d.protocol !== "") return desc;
-    return `${d.name}@npm:${d.range}`;
-  };
-
   const addNode = (e: YarnLockEntry): string | null => {
     if (e.protocol === "workspace" || e.version === "") return null;
     const key = `${e.name}@${e.version}`;
@@ -244,13 +244,13 @@ export function yarnLockfileGraph(
     const key = addNode(e);
     if (key === null) continue;
     for (const d of e.descriptors) {
-      const n = norm(d);
+      const n = normalizeDescriptor(d);
       if (!canonical.has(n)) canonical.set(n, key);
     }
   }
 
   const resolveTarget = (desc: string): string | null => {
-    const hit = canonical.get(norm(desc));
+    const hit = canonical.get(normalizeDescriptor(desc));
     if (hit !== undefined) return hit;
     const d = parseDescriptor(desc);
     if (d.protocol === "workspace") return null; // workspace project, no package node

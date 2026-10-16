@@ -12,8 +12,10 @@ report** — `RESOLVED | MISSING | VERSION_MISMATCH | AMBIGUOUS`
 `--strict-sources` fails on *any* non-`RESOLVED` component. A component
 resolves by walking up from the project root through ancestor
 `node_modules` directories (npm hoisting: a monorepo subfolder finds its
-dependencies at the repo root); the per-candidate `NO_SOURCE` verdict and
-the per-component status share one resolver.
+dependencies at the repo root); Yarn PnP projects resolve through the
+PnP locator map instead (the importer workspace's declared dependencies
+only — strict per-workspace isolation). The per-candidate `NO_SOURCE`
+verdict and the per-component status share one resolver.
 
 - **`AMBIGUOUS` (plan v3.4 item 6, tie-graph fallback v3.5 item 7):** a
   single SBOM component cannot be tied to *any* instance through the tie
@@ -22,7 +24,11 @@ the per-component status share one resolver.
   lockfile's resolved graph — and when neither exists, duplicate instances
   stay separate instances, never `AMBIGUOUS`** (no graph to check, no
   failure to report), with `completeness.dependencyGraph: "absent"`
-  recording the gap. **Multiple instances of one name+version are the
+  recording the gap. For Yarn PnP the lockfile graph is the berry
+`yarn.lock` graph, whose node paths are the content-addressed
+extraction directories — the tie comparison (normalized realpath
+equality against the instance's `realDir`) works unchanged.
+**Multiple instances of one name+version are the
   normal case, not ambiguity:** nested hoisting and pnpm peer-dependency
   variants are separate instances, each with its own verdict on the app's
   resolved graph — never collapsed by name+version alone, never tripping
@@ -38,8 +44,10 @@ the per-component status share one resolver.
   installed inside) still produces a finding.
 - **A deterministic install fingerprint** — instance identities +
   realpaths + the install-state file content when present (npm
-  `node_modules/.package-lock.json`, pnpm `.modules.yaml`; exact names
-  verified in M8) — joins the cache keys (ADR 0015) and is compared against
+  `node_modules/.package-lock.json`, pnpm `.modules.yaml`, yarn PnP
+  `.yarn/install-state.gz` — its RAW content, so the content hash also
+  covers Yarn 4.x's binary serialization; exact names verified in M8)
+  — joins the cache keys (ADR 0015) and is compared against
   the lockfile's expectation, so locally patched packages, lockfile/tree
   drift, and unreadable directories are visible instead of producing
   apparently normal verdicts; loaded-file content hashes (IR keys) catch

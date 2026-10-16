@@ -192,21 +192,32 @@ describe("readInstallState", () => {
     }
   });
 
-  test("given valid gzip but non-JSON content, when read, then a UsageError", () => {
-    const root = tmpSync("corrupt-json");
+  test("given valid gzip but binary (non-JSON) content — the Yarn 4.x serialization — when read, then null (present but undecodable, NOT corrupt)", () => {
+    const root = tmpSync("binary");
     try {
-      writeGz(root, gzipSync("not json at all"));
-      expect(() => readInstallState(root)).toThrow(/not valid JSON/);
+      // A few non-JSON bytes (the real 4.x content is a binary map format).
+      writeGz(root, gzipSync(Buffer.concat([Buffer.from([1, 14, 0, 22]), Buffer.from('o"linkersCustomData;')])));
+      expect(readInstallState(root)).toBeNull();
     } finally {
       void rm(root, { recursive: true, force: true });
     }
   });
 
-  test("given a JSON object (not an array), when read, then a UsageError", () => {
+  test("given a JSON object (not the array-of-records shape), when read, then null (a format we do not decode, not corruption)", () => {
     const root = tmpSync("not-array");
     try {
       writeGz(root, gzipSync(JSON.stringify({ nope: true })));
-      expect(() => readInstallState(root)).toThrow(/expected a JSON array/);
+      expect(readInstallState(root)).toBeNull();
+    } finally {
+      void rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("given gzip-valid content that LOOKS like JSON but is truncated, when read, then a UsageError (corrupt)", () => {
+    const root = tmpSync("truncated");
+    try {
+      writeGz(root, gzipSync('{"version": 5, "folderName": "x.zip"'));
+      expect(() => readInstallState(root)).toThrow(/not valid JSON/);
     } finally {
       void rm(root, { recursive: true, force: true });
     }

@@ -33,10 +33,24 @@ export interface Workspace {
 
 export type Layout = "npm" | "pnpm" | "pnp" | "unknown";
 
+/**
+ * PnP layout context (M7c, ADR 0005 profile (c)): the data-driven install
+ * facts the resolver needs. The `.pnp.cjs` itself is a marker only — never
+ * executed or parsed (ADR 0017); these come from install-state + yarn.lock.
+ */
+export interface PnpContext {
+  /** name@version → content-addressed extraction dir (zip found in a cache). */
+  byLocator: Map<string, string>;
+  /** Normalized descriptor (`name@npm:range`) → canonical lockfile entry key. */
+  canonical: Map<string, string>;
+  /** Workspace project dirs (application code; `workspace:` deps resolve there). */
+  workspaceDirs: string[];
+}
+
 export interface ProjectModel {
   /** Absolute project root (the --project value). */
   root: string;
-  /** Detected install layout (pnp is refused before a model is built). */
+  /** Detected install layout (pnp carries the `pnp` context when supported). */
   layout: Layout;
   /** Workspace package directories (application code, analyzed per workspace). */
   workspaces: Workspace[];
@@ -49,6 +63,8 @@ export interface ProjectModel {
    * lockfile (npm workspaces hoist there). Walked-up scans stop there.
    */
   installRoot: string;
+  /** PnP layout context (absent for the npm/pnpm layouts). */
+  pnp?: PnpContext;
 }
 
 /** One node in the tie graph (SBOM ref or lockfile resolved entry). */
