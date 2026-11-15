@@ -689,7 +689,7 @@ export function resolveTsconfigAlias(
     const mid = spec.slice(prefix.length, spec.length - suffix.length);
     if (mid.length === 0) continue;
     for (const target of targets) {
-      const expanded = target.replace("*", mid);
+      const expanded = target.replace(/\*/g, mid);
       const t = firstExisting(resolvePath(config.baseUrl, expanded));
       if (t !== null) {
         if (best === null || prefix.length > best.pattern.length) {
